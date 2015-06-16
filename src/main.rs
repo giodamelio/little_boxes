@@ -28,6 +28,17 @@ struct Args {
     flag_version: bool,
 }
 
+struct Charset {
+    horizontal: char,
+    vertical: char,
+    corner_up_left: char,
+    corner_up_right: char,
+    corner_down_left: char,
+    corner_down_right: char,
+    t_right: char,
+    t_left: char,
+}
+
 fn main() {
     // Parse args
     let args: Args = Docopt::new(USAGE)
@@ -69,6 +80,18 @@ fn main() {
 }
 
 fn box_it(input: Vec<String>) {
+    // Defalt charset
+    let charset = Charset {
+        horizontal: '━',
+        vertical: '┃',
+        corner_up_left: '┏',
+        corner_up_right: '┓',
+        corner_down_left: '┗',
+        corner_down_right: '┛',
+        t_right: '┣',
+        t_left: '┫',
+    };
+
     //  Get the longest line in the output
     // Cleaner approace, but max_by is still marked unstable
     // let longest_line = match input.iter().max_by(|x| x.len()) {
@@ -77,9 +100,31 @@ fn box_it(input: Vec<String>) {
     // };
     let mut sorted_input = input.clone();
     sorted_input.sort_by(|a, b| b.len().cmp(&a.len()));
-    let longest_line = sorted_input[0].len();
+    let max_length = sorted_input[0].len();
 
-    for line in input {
-        println!("{}", line);
+    // Print top of box
+    print!("{}", charset.corner_up_left);
+    for _ in 0..(max_length + 2) {
+        print!("{}", charset.horizontal)
     }
+    println!("{}", charset.corner_up_right);
+
+    // Print the lines
+    for line in input {
+        print!("{} {}", charset.vertical, line);
+
+        // Pad shorter lines with spaces
+        for _ in 0..(max_length - line.len()) {
+            print!(" ");
+        }
+
+        println!(" {}", charset.vertical);
+    }
+
+    // Print bottom of box
+    print!("{}", charset.corner_down_left);
+    for _ in 0..(max_length + 2) {
+        print!("{}", charset.horizontal)
+    }
+    println!("{}", charset.corner_down_right);
 }
