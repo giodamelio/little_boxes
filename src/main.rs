@@ -8,7 +8,7 @@ use std::io::prelude::*;
 use docopt::Docopt;
 
 mod draw_box;
-use self::draw_box::{ DrawBox, SimpleBox };
+use self::draw_box::{ SimpleBox };
 mod charset;
 
 // Write the Docopt usage string.
@@ -80,6 +80,6 @@ fn main() {
         t_left: '┫',
     };
 
-    let basic_box: SimpleBox = DrawBox::new(input, charset);
+    let basic_box = SimpleBox::new(input, charset);
     basic_box.print();
 }
