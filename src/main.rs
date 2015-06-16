@@ -127,10 +127,12 @@ fn main() {
         }
     };
 
-    // let basic_box: SimpleBox = DrawBox::new(input, charset);
-    // basic_box.print();
-
-    let mut title_box: TitleBox = DrawBox::new(input, charset);
-    title_box.set_title("Test Title");
-    title_box.print();
+    if args.flag_title != "" {
+        let mut title_box: TitleBox = DrawBox::new(input, charset);
+        title_box.set_title(args.flag_title.as_ref());
+        title_box.print();
+    } else {
+        let basic_box: SimpleBox = DrawBox::new(input, charset);
+        basic_box.print();
+    }
 }
