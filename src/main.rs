@@ -20,7 +20,6 @@ Options:
   -c, --charset <charset>    The charset to draw the box with [default: thick]
   -t, --title <title>        Add a title to the box
   --title-align <alignment>  The Alignment of the title [default: left]
-  --command <command>    Run a command and put its output in the box
   -h, --help                 Shows this help
   --version                  Show version
 ";
@@ -32,7 +31,6 @@ const VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
 struct Args {
     flag_charset: String,
     flag_title: String,
-    flag_command: String,
     flag_version: bool,
 }
 
@@ -48,29 +46,19 @@ fn main() {
         process::exit(0);
     }
 
-    // Choose input
-    let input: Vec<String>;
-    if args.flag_command != "" {
-        // Command output
-        println!("Not Implemented");
-        process::exit(1);
-    } else {
-        // Stdin
-        let stdin = io::stdin();
-
-        // Read stdin and convert to vector of Strings
-        input = stdin
-            .lock()
-            .lines()
-            .map(|line| line.ok())
-            .map(|line| {
-                match line {
-                    Some(a) => a,
-                    None => String::new(),
-                }
-            })
-            .collect();
-    }
+    // Read stdin and convert to vector of Strings
+    let stdin = io::stdin();
+    let input = stdin
+        .lock()
+        .lines()
+        .map(|line| line.ok())
+        .map(|line| {
+            match line {
+                Some(a) => a,
+                None => String::new(),
+            }
+        })
+        .collect();
 
     // Handle charset
     let charset = match args.flag_charset.as_ref() {
