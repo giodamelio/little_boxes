@@ -2,3 +2,8 @@
 name = "little_boxes"
 version = "0.1.0"
 authors = ["Gio d'Amelio <giodamelio@gmail.com>"]
+
+[dependencies]
+docopt = "0.6.66"
+rustc-serialize = "0.3.15"
+
