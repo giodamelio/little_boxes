@@ -117,7 +117,14 @@ impl<'a> DrawBox for TitleBox<'a> {
             self.title,
             self.charset.t_right
         );
-        for _ in 0..(self.max_length + 2 - (self.title.len() + 1 + 4)) {
+
+        let title_length = self.title.len() + 5;
+        let num_pad: usize = if title_length < self.max_length {
+            self.max_length + 2 - title_length
+        } else {
+            1
+        };
+        for _ in 0..num_pad {
             print!("{}", self.charset.horizontal)
         }
         println!("{}", self.charset.corner_up_right);
@@ -128,7 +135,13 @@ impl<'a> DrawBox for TitleBox<'a> {
             print!("{} {}", self.charset.vertical, line);
 
             // Pad shorter lines with spaces
-            for _ in 0..(self.max_length - line.len()) {
+            let title_length = self.title.len() + 5;
+            let num_pad: usize = if title_length < self.max_length {
+                self.max_length - line.len()
+            } else {
+                title_length - line.len() - 1
+            };
+            for _ in 0..num_pad {
                 print!(" ");
             }
 
@@ -138,7 +151,13 @@ impl<'a> DrawBox for TitleBox<'a> {
 
     fn print_bottom(&self) {
         print!("{}", self.charset.corner_down_left);
-        for _ in 0..(self.max_length + 2) {
+        let title_length = self.title.len() + 5;
+        let num_pad: usize = if title_length < self.max_length {
+            self.max_length + 2
+        } else {
+            title_length + 1
+        };
+        for _ in 0..num_pad {
             print!("{}", self.charset.horizontal)
         }
         println!("{}", self.charset.corner_down_right);
