@@ -10,16 +10,19 @@ use docopt::Docopt;
 mod draw_box;
 use self::draw_box::{ DrawBox, SimpleBox, TitleBox };
 mod charset;
+use self::charset::Charset;
 
 // Write the Docopt usage string.
 static USAGE: &'static str = "
 Usage: little_boxes [options]
-       little_boxes (--help | --version)
 
 Options:
-  -t, --title <title>      Add a title to the box
-  -c, --command <command>  Run a command and put its output in the box
-  --version                Show version
+  -c, --charset <charset>    The charset to draw the box with [default: thick]
+  -t, --title <title>        Add a title to the box
+  --title-align <alignment>  The Alignment of the title [default: left]
+  --command <command>    Run a command and put its output in the box
+  -h, --help                 Shows this help
+  --version                  Show version
 ";
 
 // Get the version from cargo
@@ -27,6 +30,7 @@ const VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
 
 #[derive(RustcDecodable, Debug)]
 struct Args {
+    flag_charset: String,
     flag_title: String,
     flag_command: String,
     flag_version: bool,
@@ -68,16 +72,72 @@ fn main() {
             .collect();
     }
 
-    // Defalt charset
-    let charset = charset::Charset {
-        horizontal: '━',
-        vertical: '┃',
-        corner_up_left: '┏',
-        corner_up_right: '┓',
-        corner_down_left: '┗',
-        corner_down_right: '┛',
-        t_right: '┣',
-        t_left: '┫',
+    // Handle charset
+    let charset = match args.flag_charset.as_ref() {
+        "thick" => Charset {
+            horizontal: '━',
+            vertical: '┃',
+            corner_up_left: '┏',
+            corner_up_right: '┓',
+            corner_down_left: '┗',
+            corner_down_right: '┛',
+            t_right: '┣',
+            t_left: '┫',
+        },
+        "thin" => Charset {
+            horizontal: '─',
+            vertical: '│',
+            corner_up_left: '┌',
+            corner_up_right: '┐',
+            corner_down_left: '└',
+            corner_down_right: '┘',
+            t_right: '├',
+            t_left: '┤',
+        },
+        "double" => Charset {
+            horizontal: '═',
+            vertical: '║',
+            corner_up_left: '╔',
+            corner_up_right: '╗',
+            corner_down_left: '╚',
+            corner_down_right: '╝',
+            t_right: '╠',
+            t_left: '╣',
+        },
+        "box" => Charset {
+            horizontal: '█',
+            vertical: '█',
+            corner_up_left: '█',
+            corner_up_right: '█',
+            corner_down_left: '█',
+            corner_down_right: '█',
+            t_right: '█',
+            t_left: '█',
+        },
+        "rounded" => Charset {
+            horizontal: '─',
+            vertical: '│',
+            corner_up_left: '╭',
+            corner_up_right: '╮',
+            corner_down_left: '╰',
+            corner_down_right: '╯',
+            t_right: '├',
+            t_left: '┤',
+        },
+        "dot" => Charset {
+            horizontal: '⠶',
+            vertical: '⣿',
+            corner_up_left: '⣶',
+            corner_up_right: '⣶',
+            corner_down_left: '⠿',
+            corner_down_right: '⠿',
+            t_right: '⡷',
+            t_left: '⢾',
+        },
+        _ => {
+            println!("Charset must be one of thick, thin, double, box, rounded, dot");
+            process::exit(1);
+        }
     };
 
     // let basic_box: SimpleBox = DrawBox::new(input, charset);
