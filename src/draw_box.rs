@@ -1,19 +1,25 @@
 use super::charset::Charset;
 
-pub struct DrawBox {
+pub trait DrawBox {
+    fn new(content: Vec<String>, charset: Charset) -> Self;
+    fn print(&self);
+}
+
+// A simple box around the content
+pub struct SimpleBox {
     content: Vec<String>,
     charset: Charset,
 }
 
-impl DrawBox {
-    pub fn new(content: Vec<String>, charset: Charset) -> DrawBox {
-        DrawBox {
+impl DrawBox for SimpleBox {
+    fn new(content: Vec<String>, charset: Charset) -> SimpleBox {
+        SimpleBox {
             content: content,
             charset: charset,
         }
     }
 
-    pub fn print(&self) {
+    fn print(&self) {
         //  Get the longest line in the output
         // Cleaner approace, but max_by is still marked unstable
         // let longest_line = match input.iter().max_by(|x| x.len()) {
