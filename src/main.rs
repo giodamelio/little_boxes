@@ -19,7 +19,6 @@ Usage: little_boxes [options]
 Options:
   -c, --charset <charset>    The charset to draw the box with [default: thick]
   -t, --title <title>        Add a title to the box
-  --title-align <alignment>  The Alignment of the title [default: left]
   -h, --help                 Shows this help
   --version                  Show version
 ";
