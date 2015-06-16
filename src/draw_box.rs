@@ -110,13 +110,14 @@ impl<'a> DrawBox for TitleBox<'a> {
 
     fn print_top(&self) {
         print!(
-            "{}{} {} {}",
+            "{}{}{} {} {}",
             self.charset.corner_up_left,
+            self.charset.horizontal,
             self.charset.t_left,
             self.title,
             self.charset.t_right
         );
-        for _ in 0..(self.max_length + 2 - (self.title.len() + 4)) {
+        for _ in 0..(self.max_length + 2 - (self.title.len() + 1 + 4)) {
             print!("{}", self.charset.horizontal)
         }
         println!("{}", self.charset.corner_up_right);
