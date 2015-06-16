@@ -64,6 +64,21 @@ fn main() {
             .collect();
     }
 
+    // Print it in a box
+    box_it(input);
+}
+
+fn box_it(input: Vec<String>) {
+    //  Get the longest line in the output
+    // Cleaner approace, but max_by is still marked unstable
+    // let longest_line = match input.iter().max_by(|x| x.len()) {
+    //     Some(line) => line.len(),
+    //     _          => 0,
+    // };
+    let mut sorted_input = input.clone();
+    sorted_input.sort_by(|a, b| b.len().cmp(&a.len()));
+    let longest_line = sorted_input[0].len();
+
     for line in input {
         println!("{}", line);
     }
