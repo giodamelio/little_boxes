@@ -1,0 +1,4 @@
+[package]
+name = "little_boxes"
+version = "0.1.0"
+authors = ["Gio d'Amelio <giodamelio@gmail.com>"]
