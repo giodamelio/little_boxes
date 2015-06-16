@@ -2,6 +2,8 @@ extern crate rustc_serialize;
 extern crate docopt;
 
 use std::process;
+use std::io;
+use std::io::prelude::*;
 
 use docopt::Docopt;
 
@@ -38,5 +40,31 @@ fn main() {
         process::exit(0);
     }
 
-    println!("{:?}", args);
+    // Choose input
+    let input: Vec<String>;
+    if args.flag_command != "" {
+        // Command output
+        println!("Not Implemented");
+        process::exit(1);
+    } else {
+        // Stdin
+        let stdin = io::stdin();
+
+        // Read stdin and convert to vector of Strings
+        input = stdin
+            .lock()
+            .lines()
+            .map(|line| line.ok())
+            .map(|line| {
+                match line {
+                    Some(a) => a,
+                    None => String::new(),
+                }
+            })
+            .collect();
+    }
+
+    for line in input {
+        println!("{}", line);
+    }
 }
