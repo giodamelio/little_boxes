@@ -136,11 +136,12 @@ impl<'a> DrawBox for TitleBox<'a> {
             print!("{} {}", self.charset.vertical, line);
 
             // Pad shorter lines with spaces
+            let length: usize = line.chars().count();
             let title_length = self.title.len() + 5;
             let num_pad: usize = if title_length < self.max_length {
-                self.max_length - line.len()
+                self.max_length - length
             } else {
-                title_length - line.len() - 1
+                title_length - length - 1
             };
             for _ in 0..num_pad {
                 print!(" ");
