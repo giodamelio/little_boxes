@@ -55,9 +55,10 @@ impl DrawBox for SimpleBox {
     fn print_middle(&self) {
         for line in self.content.iter() {
             print!("{} {}", self.charset.vertical, line);
+            let length: usize = line.chars().count();
 
             // Pad shorter lines with spaces
-            for _ in 0..(self.max_length - line.len()) {
+            for _ in 0..(self.max_length - length) {
                 print!(" ");
             }
 

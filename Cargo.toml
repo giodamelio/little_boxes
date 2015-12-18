@@ -1,6 +1,6 @@
 [package]
 name = "little_boxes"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Gio d'Amelio <giodamelio@gmail.com>"]
 
 [dependencies]
