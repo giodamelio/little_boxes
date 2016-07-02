@@ -9,7 +9,7 @@ pub struct Charset {
     pub t_left: char,
 }
 
-pub fn charsets(input: &str) -> Option<Charset> {
+pub fn get_charset(input: &str) -> Option<Charset> {
     match input {
         "thick" => {
             Some(Charset {
