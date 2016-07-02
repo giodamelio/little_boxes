@@ -10,7 +10,7 @@ use docopt::Docopt;
 mod draw_box;
 use self::draw_box::{DrawBox, SimpleBox, TitleBox};
 mod charset;
-use self::charset::Charset;
+use self::charset::{Charset, charsets};
 
 // Write the Docopt usage string.
 static USAGE: &'static str = "
@@ -59,80 +59,9 @@ fn main() {
         .collect();
 
     // Handle charset
-    let charset = match args.flag_charset.as_ref() {
-        "thick" => {
-            Charset {
-                horizontal: '━',
-                vertical: '┃',
-                corner_up_left: '┏',
-                corner_up_right: '┓',
-                corner_down_left: '┗',
-                corner_down_right: '┛',
-                t_right: '┣',
-                t_left: '┫',
-            }
-        }
-        "thin" => {
-            Charset {
-                horizontal: '─',
-                vertical: '│',
-                corner_up_left: '┌',
-                corner_up_right: '┐',
-                corner_down_left: '└',
-                corner_down_right: '┘',
-                t_right: '├',
-                t_left: '┤',
-            }
-        }
-        "double" => {
-            Charset {
-                horizontal: '═',
-                vertical: '║',
-                corner_up_left: '╔',
-                corner_up_right: '╗',
-                corner_down_left: '╚',
-                corner_down_right: '╝',
-                t_right: '╠',
-                t_left: '╣',
-            }
-        }
-        "box" => {
-            Charset {
-                horizontal: '█',
-                vertical: '█',
-                corner_up_left: '█',
-                corner_up_right: '█',
-                corner_down_left: '█',
-                corner_down_right: '█',
-                t_right: '█',
-                t_left: '█',
-            }
-        }
-        "rounded" => {
-            Charset {
-                horizontal: '─',
-                vertical: '│',
-                corner_up_left: '╭',
-                corner_up_right: '╮',
-                corner_down_left: '╰',
-                corner_down_right: '╯',
-                t_right: '├',
-                t_left: '┤',
-            }
-        }
-        "dot" => {
-            Charset {
-                horizontal: '⠶',
-                vertical: '⣿',
-                corner_up_left: '⣶',
-                corner_up_right: '⣶',
-                corner_down_left: '⠿',
-                corner_down_right: '⠿',
-                t_right: '⡷',
-                t_left: '⢾',
-            }
-        }
-        _ => {
+    let charset: Charset = match charsets(args.flag_charset.as_ref()) {
+        Some(charset) => charset,
+        None => {
             println!("Charset must be one of thick, thin, double, box, rounded, dot");
             process::exit(1);
         }
