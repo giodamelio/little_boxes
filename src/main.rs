@@ -8,7 +8,7 @@ use std::io::prelude::*;
 use docopt::Docopt;
 
 mod draw_box;
-use self::draw_box::{ DrawBox, SimpleBox, TitleBox };
+use self::draw_box::{DrawBox, SimpleBox, TitleBox};
 mod charset;
 use self::charset::Charset;
 
@@ -47,8 +47,7 @@ fn main() {
 
     // Read stdin and convert to vector of Strings
     let stdin = io::stdin();
-    let input = stdin
-        .lock()
+    let input = stdin.lock()
         .lines()
         .map(|line| line.ok())
         .map(|line| {
@@ -61,66 +60,78 @@ fn main() {
 
     // Handle charset
     let charset = match args.flag_charset.as_ref() {
-        "thick" => Charset {
-            horizontal: '━',
-            vertical: '┃',
-            corner_up_left: '┏',
-            corner_up_right: '┓',
-            corner_down_left: '┗',
-            corner_down_right: '┛',
-            t_right: '┣',
-            t_left: '┫',
-        },
-        "thin" => Charset {
-            horizontal: '─',
-            vertical: '│',
-            corner_up_left: '┌',
-            corner_up_right: '┐',
-            corner_down_left: '└',
-            corner_down_right: '┘',
-            t_right: '├',
-            t_left: '┤',
-        },
-        "double" => Charset {
-            horizontal: '═',
-            vertical: '║',
-            corner_up_left: '╔',
-            corner_up_right: '╗',
-            corner_down_left: '╚',
-            corner_down_right: '╝',
-            t_right: '╠',
-            t_left: '╣',
-        },
-        "box" => Charset {
-            horizontal: '█',
-            vertical: '█',
-            corner_up_left: '█',
-            corner_up_right: '█',
-            corner_down_left: '█',
-            corner_down_right: '█',
-            t_right: '█',
-            t_left: '█',
-        },
-        "rounded" => Charset {
-            horizontal: '─',
-            vertical: '│',
-            corner_up_left: '╭',
-            corner_up_right: '╮',
-            corner_down_left: '╰',
-            corner_down_right: '╯',
-            t_right: '├',
-            t_left: '┤',
-        },
-        "dot" => Charset {
-            horizontal: '⠶',
-            vertical: '⣿',
-            corner_up_left: '⣶',
-            corner_up_right: '⣶',
-            corner_down_left: '⠿',
-            corner_down_right: '⠿',
-            t_right: '⡷',
-            t_left: '⢾',
-        },
+        "thick" => {
+            Charset {
+                horizontal: '━',
+                vertical: '┃',
+                corner_up_left: '┏',
+                corner_up_right: '┓',
+                corner_down_left: '┗',
+                corner_down_right: '┛',
+                t_right: '┣',
+                t_left: '┫',
+            }
+        }
+        "thin" => {
+            Charset {
+                horizontal: '─',
+                vertical: '│',
+                corner_up_left: '┌',
+                corner_up_right: '┐',
+                corner_down_left: '└',
+                corner_down_right: '┘',
+                t_right: '├',
+                t_left: '┤',
+            }
+        }
+        "double" => {
+            Charset {
+                horizontal: '═',
+                vertical: '║',
+                corner_up_left: '╔',
+                corner_up_right: '╗',
+                corner_down_left: '╚',
+                corner_down_right: '╝',
+                t_right: '╠',
+                t_left: '╣',
+            }
+        }
+        "box" => {
+            Charset {
+                horizontal: '█',
+                vertical: '█',
+                corner_up_left: '█',
+                corner_up_right: '█',
+                corner_down_left: '█',
+                corner_down_right: '█',
+                t_right: '█',
+                t_left: '█',
+            }
+        }
+        "rounded" => {
+            Charset {
+                horizontal: '─',
+                vertical: '│',
+                corner_up_left: '╭',
+                corner_up_right: '╮',
+                corner_down_left: '╰',
+                corner_down_right: '╯',
+                t_right: '├',
+                t_left: '┤',
+            }
+        }
+        "dot" => {
+            Charset {
+                horizontal: '⠶',
+                vertical: '⣿',
+                corner_up_left: '⣶',
+                corner_up_right: '⣶',
+                corner_down_left: '⠿',
+                corner_down_right: '⠿',
+                t_right: '⡷',
+                t_left: '⢾',
+            }
+        }
         _ => {
             println!("Charset must be one of thick, thin, double, box, rounded, dot");
             process::exit(1);

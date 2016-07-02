@@ -110,14 +110,12 @@ impl<'a> DrawBox for TitleBox<'a> {
     }
 
     fn print_top(&self) {
-        print!(
-            "{}{}{} {} {}",
-            self.charset.corner_up_left,
-            self.charset.horizontal,
-            self.charset.t_left,
-            self.title,
-            self.charset.t_right
-        );
+        print!("{}{}{} {} {}",
+               self.charset.corner_up_left,
+               self.charset.horizontal,
+               self.charset.t_left,
+               self.title,
+               self.charset.t_right);
 
         let title_length = self.title.len() + 5;
         let num_pad: usize = if title_length < self.max_length {

@@ -8,4 +8,3 @@ pub struct Charset {
     pub t_right: char,
     pub t_left: char,
 }
-
