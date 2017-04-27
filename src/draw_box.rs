@@ -22,11 +22,6 @@ pub struct SimpleBox {
 impl DrawBox for SimpleBox {
     fn new(content: Vec<String>, charset: Charset) -> SimpleBox {
         //  Get the longest line in the output
-        // Cleaner approace, but max_by is still marked unstable
-        // let longest_line = match input.iter().max_by(|x| x.len()) {
-        //     Some(line) => line.len(),
-        //     _          => 0,
-        // };
         let mut sorted_input = content.clone();
         sorted_input.sort_by(|a, b| b.len().cmp(&a.len()));
         let max_length = sorted_input[0].len();
@@ -86,11 +81,6 @@ pub struct TitleBox<'a> {
 impl<'a> DrawBox for TitleBox<'a> {
     fn new(content: Vec<String>, charset: Charset) -> TitleBox<'a> {
         //  Get the longest line in the output
-        // Cleaner approace, but max_by is still marked unstable
-        // let longest_line = match input.iter().max_by(|x| x.len()) {
-        //     Some(line) => line.len(),
-        //     _          => 0,
-        // };
         let mut sorted_input = content.clone();
         sorted_input.sort_by(|a, b| b.len().cmp(&a.len()));
         let max_length = sorted_input[0].len();
