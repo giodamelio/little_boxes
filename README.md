@@ -1,4 +1,4 @@
-# Little Boxes
+# Little Boxes [![Build Status](https://travis-ci.org/giodamelio/little_boxes.svg?branch=master)](https://travis-ci.org/giodamelio/little_boxes)
 
 Adds boxes around stdin. Optionally adds a title.
 
