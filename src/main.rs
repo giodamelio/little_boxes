@@ -1,5 +1,6 @@
 extern crate rustc_serialize;
 extern crate docopt;
+extern crate regex;
 
 use std::process;
 use std::io;

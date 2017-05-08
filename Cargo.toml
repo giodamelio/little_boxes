@@ -1,9 +1,9 @@
 [package]
+authors = ["Gio d'Amelio <giodamelio@gmail.com>"]
 name = "little_boxes"
 version = "1.1.0"
-authors = ["Gio d'Amelio <giodamelio@gmail.com>"]
 
 [dependencies]
 docopt = "0.6.66"
+regex = "0.2.1"
 rustc-serialize = "0.3.15"
-

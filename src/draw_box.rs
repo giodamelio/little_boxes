@@ -1,3 +1,5 @@
+use regex::Regex;
+
 use super::charset::Charset;
 
 pub trait DrawBox {
@@ -10,6 +12,15 @@ pub trait DrawBox {
     fn print_top(&self);
     fn print_middle(&self);
     fn print_bottom(&self);
+}
+
+// Find the count of visible chars in a String
+fn count_visible_chars(input: &String) -> usize {
+    let ansi_regex = Regex::new(r"(\x9B|\x1B\[)[0-?]*[ -/]*[@-~]").unwrap();
+    ansi_regex
+        .replace_all(input, "")
+        .chars()
+        .count()
 }
 
 // A simple box around the content
@@ -50,8 +61,8 @@ impl DrawBox for SimpleBox {
     fn print_middle(&self) {
         for line in self.content.iter() {
             print!("{} {}", self.charset.vertical, line);
-            let length: usize = line.chars().count();
-
+            let length: usize = count_visible_chars(line);
+            
             // Pad shorter lines with spaces
             for _ in 0..(self.max_length - length) {
                 print!(" ");
@@ -124,7 +135,7 @@ impl<'a> DrawBox for TitleBox<'a> {
             print!("{} {}", self.charset.vertical, line);
 
             // Pad shorter lines with spaces
-            let length: usize = line.chars().count();
+            let length: usize = count_visible_chars(line);
             let title_length = self.title.len() + 5;
             let num_pad: usize = if title_length < self.max_length {
                 self.max_length - length
