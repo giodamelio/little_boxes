@@ -2,6 +2,8 @@
 authors = ["Gio d'Amelio <giodamelio@gmail.com>"]
 name = "little_boxes"
 version = "1.2.0"
+description = "Adds boxes around stdin. Optionally adds a title"
+license = "MIT"
 
 [dependencies]
 docopt = "0.6.66"
