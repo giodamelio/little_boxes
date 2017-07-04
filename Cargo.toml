@@ -1,7 +1,7 @@
 [package]
 authors = ["Gio d'Amelio <giodamelio@gmail.com>"]
 name = "little_boxes"
-version = "1.2.0"
+version = "1.3.0"
 description = "Adds boxes around stdin. Optionally adds a title"
 license = "MIT"
 
