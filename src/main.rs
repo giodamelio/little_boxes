@@ -1,4 +1,4 @@
-extern crate rustc_serialize;
+#[macro_use] extern crate serde_derive;
 extern crate docopt;
 extern crate regex;
 
@@ -29,7 +29,7 @@ Options:
 // Get the version from cargo
 const VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
 
-#[derive(RustcDecodable, Debug)]
+#[derive(Deserialize, Debug)]
 struct Args {
     flag_charset: String,
     flag_title: Option<String>,
@@ -40,8 +40,9 @@ struct Args {
 fn main() {
     // Parse args
     let args: Args = Docopt::new(USAGE)
-        .and_then(|d| d.decode())
-        .unwrap_or_else(|e| e.exit());
+        .and_then(|d| d.parse())
+        .unwrap_or_else(|e| e.exit())
+        .deserialize().expect("DOCOPT FAILURE");
 
     // If we want the version
     if args.flag_version {
