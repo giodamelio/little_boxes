@@ -121,6 +121,8 @@ impl<'a> DrawBox for TitleBox<'a> {
         let title_length = self.title.len() + 5;
         let num_pad: usize = if title_length < self.max_length {
             self.max_length + 2 - title_length
+        } else if title_length == self.max_length {
+            2
         } else {
             1
         };
@@ -139,6 +141,8 @@ impl<'a> DrawBox for TitleBox<'a> {
             let title_length = self.title.len() + 5;
             let num_pad: usize = if title_length < self.max_length {
                 self.max_length - length
+            } else if title_length == self.max_length {
+                title_length - length
             } else {
                 title_length - length - 1
             };
@@ -155,6 +159,8 @@ impl<'a> DrawBox for TitleBox<'a> {
         let title_length = self.title.len() + 5;
         let num_pad: usize = if title_length < self.max_length {
             self.max_length + 2
+        } else if title_length == self.max_length {
+            title_length + 2
         } else {
             title_length + 1
         };
