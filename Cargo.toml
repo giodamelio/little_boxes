@@ -1,9 +1,12 @@
 [package]
 authors = ["Gio d'Amelio <giodamelio@gmail.com>"]
 name = "little_boxes"
-version = "1.4.0"
+version = "1.5.0"
 description = "Adds boxes around stdin. Optionally adds a title"
 license = "MIT"
+documentation = "https://github.com/giodamelio/little_boxes"
+homepage = "https://github.com/giodamelio/little_boxes"
+repository = "https://github.com/giodamelio/little_boxes"
 
 [dependencies]
 docopt = "0.6.66"
