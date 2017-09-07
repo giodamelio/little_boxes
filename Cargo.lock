@@ -1,6 +1,6 @@
 [root]
 name = "little_boxes"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "docopt 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",

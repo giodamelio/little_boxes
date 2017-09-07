@@ -6,7 +6,7 @@ homepage = "https://github.com/giodamelio/little_boxes"
 license = "MIT"
 name = "little_boxes"
 repository = "https://github.com/giodamelio/little_boxes"
-version = "1.5.0"
+version = "1.6.0"
 
 [dependencies]
 docopt = "0.8.1"
