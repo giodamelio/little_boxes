@@ -68,12 +68,9 @@ fn main() {
         let charsets = vec!["thick", "thin", "double", "box", "rounded", "dot"];
 
         for charset_name in charsets {
-            match get_charset(charset_name) {
-                Some(charset) => {
-                    println!("{}:", charset_name);
-                    print_box(input.clone(), args.flag_title.clone(), charset);
-                }
-                None => {}
+            if let Some(charset) = get_charset(charset_name) {
+                println!("{}:", charset_name);
+                print_box(input.clone(), args.flag_title.clone(), charset);
             }
         }
 

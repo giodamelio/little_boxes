@@ -15,7 +15,7 @@ pub trait DrawBox {
 }
 
 // Find the count of visible chars in a String
-fn count_visible_chars(input: &String) -> usize {
+fn count_visible_chars(input: &str) -> usize {
     let ansi_regex = Regex::new(r"(\x9B|\x1B\[)[0-?]*[ -/]*[@-~]").unwrap();
     ansi_regex
         .replace_all(input, "")
@@ -38,9 +38,9 @@ impl DrawBox for SimpleBox {
         let max_length = sorted_input[0].len();
 
         SimpleBox {
-            content: content,
-            charset: charset,
-            max_length: max_length,
+            content,
+            charset,
+            max_length,
         }
     }
 
@@ -98,9 +98,9 @@ impl<'a> DrawBox for TitleBox<'a> {
 
         TitleBox {
             title: "",
-            content: content,
-            charset: charset,
-            max_length: max_length,
+            content,
+            charset,
+            max_length,
         }
     }
 
