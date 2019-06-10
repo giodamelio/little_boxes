@@ -5,8 +5,10 @@ rust:
   - nightly
 before_script:
   - rustup component add clippy || cargo install --git https://github.com/rust-lang/rust-clippy/ --force clippy
+  - rustup component add rustfmt
 script:
   - cargo clippy
+  - cargo fmt -- --check
   - cargo test
 matrix:
   allow_failures:
