@@ -17,10 +17,7 @@ pub trait DrawBox {
 // Find the count of visible chars in a String
 fn count_visible_chars(input: &str) -> usize {
     let ansi_regex = Regex::new(r"(\x9B|\x1B\[)[0-?]*[ -/]*[@-~]").unwrap();
-    ansi_regex
-        .replace_all(input, "")
-        .chars()
-        .count()
+    ansi_regex.replace_all(input, "").chars().count()
 }
 
 // A simple box around the content
@@ -62,7 +59,7 @@ impl DrawBox for SimpleBox {
         for line in self.content.iter() {
             print!("{} {}", self.charset.vertical, line);
             let length: usize = count_visible_chars(line);
-            
+
             // Pad shorter lines with spaces
             for _ in 0..(self.max_length - length) {
                 print!(" ");
@@ -111,12 +108,14 @@ impl<'a> DrawBox for TitleBox<'a> {
     }
 
     fn print_top(&self) {
-        print!("{}{}{} {} {}",
-               self.charset.corner_up_left,
-               self.charset.horizontal,
-               self.charset.t_left,
-               self.title,
-               self.charset.t_right);
+        print!(
+            "{}{}{} {} {}",
+            self.charset.corner_up_left,
+            self.charset.horizontal,
+            self.charset.t_left,
+            self.title,
+            self.charset.t_right
+        );
 
         let title_length = self.title.len() + 5;
         let num_pad: usize = if title_length < self.max_length {

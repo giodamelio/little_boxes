@@ -1,17 +1,18 @@
-#[macro_use] extern crate serde_derive;
+#[macro_use]
+extern crate serde_derive;
 extern crate docopt;
 extern crate regex;
 
-use std::process;
 use std::io;
 use std::io::prelude::*;
+use std::process;
 
 use docopt::Docopt;
 
 mod draw_box;
 use self::draw_box::{DrawBox, SimpleBox, TitleBox};
 mod charset;
-use self::charset::{Charset, get_charset};
+use self::charset::{get_charset, Charset};
 
 // Write the Docopt usage string.
 static USAGE: &'static str = "
@@ -42,7 +43,8 @@ fn main() {
     let args: Args = Docopt::new(USAGE)
         .and_then(|d| d.parse())
         .unwrap_or_else(|e| e.exit())
-        .deserialize().expect("DOCOPT FAILURE");
+        .deserialize()
+        .expect("DOCOPT FAILURE");
 
     // If we want the version
     if args.flag_version {
@@ -52,14 +54,13 @@ fn main() {
 
     // Read stdin and convert to vector of Strings
     let stdin = io::stdin();
-    let input: Vec<String> = stdin.lock()
+    let input: Vec<String> = stdin
+        .lock()
         .lines()
         .map(|line| line.ok())
-        .map(|line| {
-            match line {
-                Some(a) => a,
-                None => String::new(),
-            }
+        .map(|line| match line {
+            Some(a) => a,
+            None => String::new(),
         })
         .collect();
 
