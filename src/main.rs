@@ -1,56 +1,48 @@
 #[macro_use]
-extern crate serde_derive;
-extern crate docopt;
+extern crate clap;
 extern crate regex;
 
 use std::io;
 use std::io::prelude::*;
 use std::process;
 
-use docopt::Docopt;
+use clap::{App, Arg};
 
 mod draw_box;
 use self::draw_box::{DrawBox, SimpleBox, TitleBox};
 mod charset;
 use self::charset::{get_charset, Charset};
 
-// Write the Docopt usage string.
-static USAGE: &'static str = "
-Usage: little_boxes [options]
-
-Options:
-  -c, --charset <charset>    The charset to draw the box with [default: thick]
-                             Available charsets: thick, thin, double, box, rounded and dot
-  -t, --title <title>        Add a title to the box
-  -a, --all                  Compare all the styles
-  -h, --help                 Shows this help
-  -v, --version              Show version
-";
-
-// Get the version from cargo
-const VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
-
-#[derive(Deserialize, Debug)]
-struct Args {
-    flag_charset: String,
-    flag_title: Option<String>,
-    flag_all: bool,
-    flag_version: bool,
-}
-
 fn main() {
-    // Parse args
-    let args: Args = Docopt::new(USAGE)
-        .and_then(|d| d.parse())
-        .unwrap_or_else(|e| e.exit())
-        .deserialize()
-        .expect("DOCOPT FAILURE");
-
-    // If we want the version
-    if args.flag_version {
-        println!("little_boxes v{}", VERSION.unwrap_or("unknown"));
-        process::exit(0);
-    }
+    let matches = App::new("little_boxes")
+        .version(crate_version!())
+        .author(crate_authors!())
+        .about(crate_description!())
+        .max_term_width(80)
+        .arg(
+            Arg::with_name("title")
+                .short("t")
+                .long("title")
+                .takes_value(true)
+                .value_name("title")
+                .help("Add a title to the box"),
+        )
+        .arg(
+            Arg::with_name("charset")
+                .short("c")
+                .long("charset")
+                .takes_value(true)
+                .possible_values(&["thick", "thin", "double", "box", "rounded", "dot"])
+                .default_value("thick")
+                .value_name("charset")
+                .help("The charset to draw the box with"),
+        )
+        .arg(
+            Arg::with_name("all")
+                .long("all")
+                .help("Compare all charsets"),
+        )
+        .get_matches();
 
     // Read stdin and convert to vector of Strings
     let stdin = io::stdin();
@@ -65,32 +57,31 @@ fn main() {
         .collect();
 
     // Compare all the charsets
-    if args.flag_all {
+    if matches.is_present("all") {
         let charsets = vec!["thick", "thin", "double", "box", "rounded", "dot"];
 
         for charset_name in charsets {
-            if let Some(charset) = get_charset(charset_name) {
-                println!("{}:", charset_name);
-                print_box(input.clone(), args.flag_title.clone(), charset);
-            }
+            let charset = get_charset(charset_name);
+            println!("{}:", charset_name);
+            print_box(input.clone(), matches.value_of("title"), charset);
         }
 
         process::exit(0);
     }
 
-    // Handle charset
-    let charset: Charset = match get_charset(args.flag_charset.as_ref()) {
-        Some(charset) => charset,
-        None => {
-            println!("Charset must be one of thick, thin, double, box, rounded, dot");
-            process::exit(1);
-        }
-    };
-
-    print_box(input, args.flag_title, charset);
+    // It is safe to .unwrap here because Clap's default will ensure that there is always a value
+    print_box(
+        input,
+        matches.value_of("title"),
+        get_charset(
+            matches
+                .value_of("charset")
+                .expect("Invalid charset recieved from Clap"),
+        ),
+    );
 }
 
-fn print_box(content: Vec<String>, title: Option<String>, charset: Charset) {
+fn print_box(content: Vec<String>, title: Option<&str>, charset: Charset) {
     match title {
         Some(title) => {
             let mut title_box: TitleBox = DrawBox::new(content, charset);

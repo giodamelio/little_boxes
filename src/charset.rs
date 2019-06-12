@@ -9,9 +9,9 @@ pub struct Charset {
     pub t_left: char,
 }
 
-pub fn get_charset(input: &str) -> Option<Charset> {
+pub fn get_charset(input: &str) -> Charset {
     match input {
-        "thick" => Some(Charset {
+        "thick" => Charset {
             horizontal: '━',
             vertical: '┃',
             corner_up_left: '┏',
@@ -20,8 +20,8 @@ pub fn get_charset(input: &str) -> Option<Charset> {
             corner_down_right: '┛',
             t_right: '┣',
             t_left: '┫',
-        }),
-        "thin" => Some(Charset {
+        },
+        "thin" => Charset {
             horizontal: '─',
             vertical: '│',
             corner_up_left: '┌',
@@ -30,8 +30,8 @@ pub fn get_charset(input: &str) -> Option<Charset> {
             corner_down_right: '┘',
             t_right: '├',
             t_left: '┤',
-        }),
-        "double" => Some(Charset {
+        },
+        "double" => Charset {
             horizontal: '═',
             vertical: '║',
             corner_up_left: '╔',
@@ -40,8 +40,8 @@ pub fn get_charset(input: &str) -> Option<Charset> {
             corner_down_right: '╝',
             t_right: '╠',
             t_left: '╣',
-        }),
-        "box" => Some(Charset {
+        },
+        "box" => Charset {
             horizontal: '█',
             vertical: '█',
             corner_up_left: '█',
@@ -50,8 +50,8 @@ pub fn get_charset(input: &str) -> Option<Charset> {
             corner_down_right: '█',
             t_right: '█',
             t_left: '█',
-        }),
-        "rounded" => Some(Charset {
+        },
+        "rounded" => Charset {
             horizontal: '─',
             vertical: '│',
             corner_up_left: '╭',
@@ -60,8 +60,8 @@ pub fn get_charset(input: &str) -> Option<Charset> {
             corner_down_right: '╯',
             t_right: '├',
             t_left: '┤',
-        }),
-        "dot" => Some(Charset {
+        },
+        "dot" => Charset {
             horizontal: '⠶',
             vertical: '⣿',
             corner_up_left: '⣶',
@@ -70,7 +70,7 @@ pub fn get_charset(input: &str) -> Option<Charset> {
             corner_down_right: '⠿',
             t_right: '⡷',
             t_left: '⢾',
-        }),
-        _ => None,
+        },
+        _ => panic!("Invalid charset name. This should not be possable!"),
     }
 }
