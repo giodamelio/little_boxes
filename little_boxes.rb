@@ -10,6 +10,7 @@ class LittleBoxes < Formula
   def install
     system "cargo", "install", "--root", prefix,
                                "--path", "."
+    man1.install "little_boxes.1"
   end
 
   test do
