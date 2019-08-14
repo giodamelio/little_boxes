@@ -14,7 +14,6 @@ mod charset;
 use self::charset::{get_charset, Charset};
 
 fn main() {
-    let foo = 3.141;
     let matches = App::new("little_boxes")
         .version(crate_version!())
         .author(crate_authors!())
