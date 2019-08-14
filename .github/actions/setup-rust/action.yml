@@ -3,7 +3,7 @@ description: Setup a Rust environment and add it to the PATH
 author: Gio d'Amelio
 inputs:
   rust-version:
-    description: Version Spec of the version to use.  Examples: stable, beta, nightly
+    description: 'Version Spec of the version to use.  Examples: stable, beta, nightly'
     default: stable
 runs:
   using: docker
