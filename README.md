@@ -1,5 +1,5 @@
 # Little Boxes
-[![Build Status](https://img.shields.io/travis/giodamelio/little_boxes.svg?style=flat-square)](https://travis-ci.org/giodamelio/little_boxes) [![Crates.io Version](https://img.shields.io/crates/v/little_boxes.svg?style=flat-square)](https://crates.io/crates/little_boxes) [![License](https://img.shields.io/crates/l/little_boxes.svg?style=flat-square)](https://github.com/giodamelio/little_boxes/blob/master/LICENSE) 
+[![Build Status](https://img.shields.io/travis/giodamelio/little_boxes.svg?style=flat-square)](https://travis-ci.org/giodamelio/little_boxes) [![Actions Status](https://wdp9fww0r9.execute-api.us-west-2.amazonaws.com/production/badge/giodamelio/little_boxes?style=flat-square)](https://wdp9fww0r9.execute-api.us-west-2.amazonaws.com/production/results/giodamelio/little_boxes) [![Crates.io Version](https://img.shields.io/crates/v/little_boxes.svg?style=flat-square)](https://crates.io/crates/little_boxes) [![License](https://img.shields.io/crates/l/little_boxes.svg?style=flat-square)](https://github.com/giodamelio/little_boxes/blob/master/LICENSE) 
 
 Adds boxes around stdin. Optionally adds a title.
 
