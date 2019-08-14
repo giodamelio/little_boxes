@@ -11,6 +11,14 @@ jobs:
     - uses: actions/checkout@master
     - name: Set Rust version
       run: rustup default ${{ matrix.rust_version }}
+    - name: Install Clippy and Rustfmt
+      run: |
+        rustup component add clippy
+        rustup component add rustfmt
+    - name: Format
+      run: cargo fmt -- --check
+    - name: Lint
+      run: cargo clippy
     - name: Build
       run: cargo build --verbose
     - name: Run tests
