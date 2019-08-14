@@ -10,6 +10,10 @@ jobs:
     steps:
     - uses: actions/checkout@master
     - uses: ./.github/actions/setup-rust
+    - name: Print Rust Location
+      run: |
+        which cargo
+        which rustc
     - name: Build
       run: cargo build --verbose
     - name: Run tests
