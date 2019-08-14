@@ -9,7 +9,9 @@ jobs:
         rust_version: [stable, beta]
     steps:
     - uses: actions/checkout@master
-    - uses: ./.github/actions/setup-rust
+    #- uses: ./.github/actions/setup-rust
+    - name: Set Rust version
+      run: rustup default ${{ matrix.rust_version }}
     - name: Print Rust Location
       run: |
         which cargo
