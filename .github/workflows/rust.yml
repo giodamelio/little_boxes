@@ -1,5 +1,5 @@
 name: Rust
-on: [push]
+on: [push, pull_request]
 jobs:
   test:
     name: Test on Rust ${{ matrix.rust_version }}
