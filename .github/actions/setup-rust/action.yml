@@ -7,4 +7,4 @@ inputs:
     default: stable
 runs:
   using: docker
-  main: docker://liuchong/rustup:all
+  image: docker://liuchong/rustup:all
