@@ -14,6 +14,11 @@ jobs:
       run: |
         which cargo
         which rustc
+        which rustup
+        cargo --version
+        rustc --version
+        rustup --version
+        rustup show
     - name: Build
       run: cargo build --verbose
     - name: Run tests
