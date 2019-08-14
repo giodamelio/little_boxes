@@ -1,10 +1,15 @@
 name: Rust
 on: [push]
 jobs:
-  build:
+  test:
+    name: Test on Rust ${{ matrix.rust_version }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust_version: [stable, beta]
     steps:
     - uses: actions/checkout@master
+    - uses: ./.github/actions/setup-rust
     - name: Build
       run: cargo build --verbose
     - name: Run tests
