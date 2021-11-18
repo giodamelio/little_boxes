@@ -175,3 +175,14 @@ impl<'a> TitleBox<'a> {
         self.title = title;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_count_visible_chars() {
+        assert_eq!(3, count_visible_chars(&"abc"));
+        assert_eq!(4, count_visible_chars(&"abc\u{200B}"));
+    }
+}
