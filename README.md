@@ -10,8 +10,6 @@ Adds boxes around stdin. Optionally adds a title.
 ```sh
 # From crates.io
 $ cargo install little_boxes
-# From the AUR
-$ packer -S little_boxes
 ```
 
 # Usage
