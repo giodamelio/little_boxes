@@ -180,6 +180,10 @@ mod tests {
     #[test]
     fn test_count_visible_chars() {
         assert_eq!(3, count_visible_chars(&"abc"), "Three normal ASCII chars");
-        assert_eq!(3, count_visible_chars(&"\u{001b}[31mabc\u{001b}[0m"), "Three ASCII chars made red");
+        assert_eq!(
+            3,
+            count_visible_chars(&"\u{001b}[31mabc\u{001b}[0m"),
+            "Three ASCII chars made red"
+        );
     }
 }

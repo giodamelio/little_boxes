@@ -2,7 +2,7 @@ use std::io;
 use std::io::prelude::*;
 use std::process;
 
-use clap::{App, Arg, crate_authors, crate_description, crate_version};
+use clap::{crate_authors, crate_description, crate_version, App, Arg};
 
 mod draw_box;
 use self::draw_box::{DrawBox, SimpleBox, TitleBox};
