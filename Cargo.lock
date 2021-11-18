@@ -57,7 +57,7 @@ checksum = "2370ca07ec338939e356443dac2296f581453c35fe1e3a3ed06023c49435f915"
 
 [[package]]
 name = "little_boxes"
-version = "1.6.0"
+version = "1.7.0"
 dependencies = [
  "clap",
  "strip-ansi-escapes",
