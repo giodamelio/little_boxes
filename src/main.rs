@@ -1,12 +1,8 @@
-#[macro_use]
-extern crate clap;
-extern crate regex;
-
 use std::io;
 use std::io::prelude::*;
 use std::process;
 
-use clap::{App, Arg};
+use clap::{App, Arg, crate_authors, crate_description, crate_version};
 
 mod draw_box;
 use self::draw_box::{DrawBox, SimpleBox, TitleBox};
