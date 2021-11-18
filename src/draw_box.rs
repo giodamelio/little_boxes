@@ -1,5 +1,3 @@
-use regex::Regex;
-
 use super::charset::Charset;
 
 pub trait DrawBox {
@@ -16,8 +14,7 @@ pub trait DrawBox {
 
 // Find the count of visible chars in a String
 fn count_visible_chars(input: &str) -> usize {
-    let ansi_regex = Regex::new(r"(\x9B|\x1B\[)[0-?]*[ -/]*[@-~]").unwrap();
-    ansi_regex.replace_all(input, "").chars().count()
+    strip_ansi_escapes::strip(input).unwrap().len()
 }
 
 // A simple box around the content
@@ -182,7 +179,7 @@ mod tests {
 
     #[test]
     fn test_count_visible_chars() {
-        assert_eq!(3, count_visible_chars(&"abc"));
-        assert_eq!(4, count_visible_chars(&"abc\u{200B}"));
+        assert_eq!(3, count_visible_chars(&"abc"), "Three normal ASCII chars");
+        assert_eq!(3, count_visible_chars(&"\u{001b}[31mabc\u{001b}[0m"), "Three ASCII chars made red");
     }
 }
