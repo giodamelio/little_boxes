@@ -11,6 +11,7 @@ edition = "2021"
 
 [dependencies]
 clap = {version = "4.3.19", features = ["default", "cargo"]}
+trycmd = {version = "0.14.16", features = ["default", "debug"]}
 strip-ansi-escapes = "0.1.1"
 
 [features]

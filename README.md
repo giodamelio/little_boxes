@@ -21,13 +21,16 @@ $ echo "Hello World" | nix run github:giodamelio/little_boxes
 # Usage
 
 ```
-little_boxes [options]
+$ little_boxes --help
+Adds boxes around stdin. Optionally adds a title
+
+Usage: little_boxes [OPTIONS]
 
 Options:
-  -c, --charset <charset>    The charset to draw the box with [default: thick]
-                             Available charsets: thick, thin, double, box, rounded and dot
-  -t, --title <title>        Add a title to the box
-  -a, --all                  Compare all the styles
-  -h, --help                 Shows this help
-  -v, --version              Show version
+  -t, --title <TITLE>      Add a title to the box
+  -c, --charset <CHARSET>  The charset to draw the box with [default: thick] [possible values: thick, thin, double, box, rounded, dot]
+      --all                Compare all charsets
+  -h, --help               Print help
+  -V, --version            Print version
+
 ```
