@@ -15,7 +15,6 @@ jobs:
         with:
           name: giodamelio
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - run: nix-shell --run "echo OK"
       - name: Build default package
         run: nix build
       - name: Actually run the thing!
