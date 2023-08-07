@@ -11,6 +11,11 @@ jobs:
         uses: DeterminateSystems/flake-checker-action@v4
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v3
+      - uses: cachix/cachix-action@v12
+        with:
+          name: giodamelio
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      - run: nix-shell --run "echo OK"
       - name: Build default package
         run: nix build
       - name: Actually run the thing!
