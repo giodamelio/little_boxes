@@ -1,7 +1,3 @@
-use dox::{mem, Option};
-
-pub type c_char = i8;
-pub type wchar_t = i32;
 pub type off_t = i64;
 pub type useconds_t = u32;
 pub type blkcnt_t = i64;
@@ -9,6 +5,7 @@ pub type socklen_t = u32;
 pub type sa_family_t = u8;
 pub type pthread_t = ::uintptr_t;
 pub type nfds_t = ::c_uint;
+pub type regoff_t = off_t;
 
 s! {
     pub struct sockaddr {
@@ -26,12 +23,6 @@ s! {
         pub sin6_scope_id: u32,
     }
 
-    pub struct sockaddr_un {
-        pub sun_len: u8,
-        pub sun_family: sa_family_t,
-        pub sun_path: [c_char; 104]
-    }
-
     pub struct passwd {
         pub pw_name: *mut ::c_char,
         pub pw_passwd: *mut ::c_char,
@@ -46,6 +37,8 @@ s! {
 
         #[cfg(not(any(target_os = "macos",
                       target_os = "ios",
+                      target_os = "tvos",
+                      target_os = "watchos",
                       target_os = "netbsd",
                       target_os = "openbsd")))]
         pub pw_fields: ::c_int,
@@ -58,7 +51,9 @@ s! {
         pub ifa_addr: *mut ::sockaddr,
         pub ifa_netmask: *mut ::sockaddr,
         pub ifa_dstaddr: *mut ::sockaddr,
-        pub ifa_data: *mut ::c_void
+        pub ifa_data: *mut ::c_void,
+        #[cfg(target_os = "netbsd")]
+        pub ifa_addrflags: ::c_uint
     }
 
     pub struct fd_set {
@@ -84,6 +79,58 @@ s! {
         pub tm_zone: *mut ::c_char,
     }
 
+    pub struct msghdr {
+        pub msg_name: *mut ::c_void,
+        pub msg_namelen: ::socklen_t,
+        pub msg_iov: *mut ::iovec,
+        pub msg_iovlen: ::c_int,
+        pub msg_control: *mut ::c_void,
+        pub msg_controllen: ::socklen_t,
+        pub msg_flags: ::c_int,
+    }
+
+    pub struct cmsghdr {
+        pub cmsg_len: ::socklen_t,
+        pub cmsg_level: ::c_int,
+        pub cmsg_type: ::c_int,
+    }
+
+    pub struct fsid_t {
+        __fsid_val: [i32; 2],
+    }
+
+    pub struct if_nameindex {
+        pub if_index: ::c_uint,
+        pub if_name: *mut ::c_char,
+    }
+
+    pub struct regex_t {
+        __re_magic: ::c_int,
+        __re_nsub: ::size_t,
+        __re_endp: *const ::c_char,
+        __re_g: *mut ::c_void,
+    }
+
+    pub struct regmatch_t {
+        pub rm_so: regoff_t,
+        pub rm_eo: regoff_t,
+    }
+
+    pub struct option {
+        pub name: *const ::c_char,
+        pub has_arg: ::c_int,
+        pub flag: *mut ::c_int,
+        pub val: ::c_int,
+    }
+}
+
+s_no_extra_traits! {
+    pub struct sockaddr_un {
+        pub sun_len: u8,
+        pub sun_family: sa_family_t,
+        pub sun_path: [c_char; 104]
+    }
+
     pub struct utsname {
         #[cfg(not(target_os = "dragonfly"))]
         pub sysname: [::c_char; 256],
@@ -107,29 +154,94 @@ s! {
         pub machine: [::c_char; 32],
     }
 
-    pub struct msghdr {
-        pub msg_name: *mut ::c_void,
-        pub msg_namelen: ::socklen_t,
-        pub msg_iov: *mut ::iovec,
-        pub msg_iovlen: ::c_int,
-        pub msg_control: *mut ::c_void,
-        pub msg_controllen: ::socklen_t,
-        pub msg_flags: ::c_int,
-    }
+}
 
-    pub struct cmsghdr {
-        pub cmsg_len: ::socklen_t,
-        pub cmsg_level: ::c_int,
-        pub cmsg_type: ::c_int,
-    }
+cfg_if! {
+    if #[cfg(feature = "extra_traits")] {
+        impl PartialEq for sockaddr_un {
+            fn eq(&self, other: &sockaddr_un) -> bool {
+                self.sun_len == other.sun_len
+                    && self.sun_family == other.sun_family
+                    && self
+                    .sun_path
+                    .iter()
+                    .zip(other.sun_path.iter())
+                    .all(|(a,b)| a == b)
+            }
+        }
 
-    pub struct fsid_t {
-        __fsid_val: [::int32_t; 2],
-    }
+        impl Eq for sockaddr_un {}
 
-    pub struct if_nameindex {
-        pub if_index: ::c_uint,
-        pub if_name: *mut ::c_char,
+        impl ::fmt::Debug for sockaddr_un {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                f.debug_struct("sockaddr_un")
+                    .field("sun_len", &self.sun_len)
+                    .field("sun_family", &self.sun_family)
+                // FIXME: .field("sun_path", &self.sun_path)
+                    .finish()
+            }
+        }
+
+        impl ::hash::Hash for sockaddr_un {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                self.sun_len.hash(state);
+                self.sun_family.hash(state);
+                self.sun_path.hash(state);
+            }
+        }
+
+        impl PartialEq for utsname {
+            fn eq(&self, other: &utsname) -> bool {
+                self.sysname
+                    .iter()
+                    .zip(other.sysname.iter())
+                    .all(|(a,b)| a == b)
+                    && self
+                    .nodename
+                    .iter()
+                    .zip(other.nodename.iter())
+                    .all(|(a,b)| a == b)
+                    && self
+                    .release
+                    .iter()
+                    .zip(other.release.iter())
+                    .all(|(a,b)| a == b)
+                    && self
+                    .version
+                    .iter()
+                    .zip(other.version.iter())
+                    .all(|(a,b)| a == b)
+                    && self
+                    .machine
+                    .iter()
+                    .zip(other.machine.iter())
+                    .all(|(a,b)| a == b)
+            }
+        }
+
+        impl Eq for utsname {}
+
+        impl ::fmt::Debug for utsname {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                f.debug_struct("utsname")
+                // FIXME: .field("sysname", &self.sysname)
+                // FIXME: .field("nodename", &self.nodename)
+                // FIXME: .field("release", &self.release)
+                // FIXME: .field("version", &self.version)
+                // FIXME: .field("machine", &self.machine)
+                    .finish()
+            }
+        }
+
+        impl ::hash::Hash for utsname {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                self.sysname.hash(state);
+                self.nodename.hash(state);
+                self.release.hash(state);
+                self.version.hash(state);
+                self.machine.hash(state);
+            }
+        }
     }
 }
 
@@ -142,9 +254,17 @@ pub const LC_TIME: ::c_int = 5;
 pub const LC_MESSAGES: ::c_int = 6;
 
 pub const FIOCLEX: ::c_ulong = 0x20006601;
+pub const FIONCLEX: ::c_ulong = 0x20006602;
+pub const FIONREAD: ::c_ulong = 0x4004667f;
 pub const FIONBIO: ::c_ulong = 0x8004667e;
+pub const FIOASYNC: ::c_ulong = 0x8004667d;
+pub const FIOSETOWN: ::c_ulong = 0x8004667c;
+pub const FIOGETOWN: ::c_ulong = 0x4004667b;
 
 pub const PATH_MAX: ::c_int = 1024;
+pub const MAXPATHLEN: ::c_int = PATH_MAX;
+
+pub const IOV_MAX: ::c_int = 1024;
 
 pub const SA_ONSTACK: ::c_int = 0x0001;
 pub const SA_SIGINFO: ::c_int = 0x0040;
@@ -180,12 +300,22 @@ pub const SIG_SETMASK: ::c_int = 3;
 pub const SIG_BLOCK: ::c_int = 0x1;
 pub const SIG_UNBLOCK: ::c_int = 0x2;
 
+pub const IP_TOS: ::c_int = 3;
 pub const IP_MULTICAST_IF: ::c_int = 9;
 pub const IP_MULTICAST_TTL: ::c_int = 10;
 pub const IP_MULTICAST_LOOP: ::c_int = 11;
 
+pub const IPV6_UNICAST_HOPS: ::c_int = 4;
+pub const IPV6_MULTICAST_IF: ::c_int = 9;
+pub const IPV6_MULTICAST_HOPS: ::c_int = 10;
 pub const IPV6_MULTICAST_LOOP: ::c_int = 11;
 pub const IPV6_V6ONLY: ::c_int = 27;
+
+pub const IPTOS_ECN_NOTECT: u8 = 0x00;
+pub const IPTOS_ECN_MASK: u8 = 0x03;
+pub const IPTOS_ECN_ECT1: u8 = 0x01;
+pub const IPTOS_ECN_ECT0: u8 = 0x02;
+pub const IPTOS_ECN_CE: u8 = 0x03;
 
 pub const ST_RDONLY: ::c_ulong = 1;
 
@@ -213,7 +343,19 @@ pub const O_NDELAY: ::c_int = O_NONBLOCK;
 pub const F_GETOWN: ::c_int = 5;
 pub const F_SETOWN: ::c_int = 6;
 
-pub const MNT_FORCE: ::c_int = 0x80000;
+pub const F_RDLCK: ::c_short = 1;
+pub const F_UNLCK: ::c_short = 2;
+pub const F_WRLCK: ::c_short = 3;
+
+pub const MNT_RDONLY: ::c_int = 0x00000001;
+pub const MNT_SYNCHRONOUS: ::c_int = 0x00000002;
+pub const MNT_NOEXEC: ::c_int = 0x00000004;
+pub const MNT_NOSUID: ::c_int = 0x00000008;
+pub const MNT_ASYNC: ::c_int = 0x00000040;
+pub const MNT_EXPORTED: ::c_int = 0x00000100;
+pub const MNT_UPDATE: ::c_int = 0x00010000;
+pub const MNT_RELOAD: ::c_int = 0x00040000;
+pub const MNT_FORCE: ::c_int = 0x00080000;
 
 pub const Q_SYNC: ::c_int = 0x600;
 pub const Q_QUOTAON: ::c_int = 0x100;
@@ -299,6 +441,7 @@ pub const MDMBUF: ::tcflag_t = 0x00100000;
 pub const WNOHANG: ::c_int = 0x00000001;
 pub const WUNTRACED: ::c_int = 0x00000002;
 
+pub const RTLD_LAZY: ::c_int = 0x1;
 pub const RTLD_NOW: ::c_int = 0x2;
 pub const RTLD_NEXT: *mut ::c_void = -1isize as *mut ::c_void;
 pub const RTLD_DEFAULT: *mut ::c_void = -2isize as *mut ::c_void;
@@ -309,31 +452,119 @@ pub const LOG_AUTHPRIV: ::c_int = 10 << 3;
 pub const LOG_FTP: ::c_int = 11 << 3;
 pub const LOG_PERROR: ::c_int = 0x20;
 
+pub const TCP_NODELAY: ::c_int = 1;
 pub const TCP_MAXSEG: ::c_int = 2;
 
 pub const PIPE_BUF: usize = 512;
 
+// si_code values for SIGBUS signal
+pub const BUS_ADRALN: ::c_int = 1;
+pub const BUS_ADRERR: ::c_int = 2;
+pub const BUS_OBJERR: ::c_int = 3;
+
+// si_code values for SIGCHLD signal
+pub const CLD_EXITED: ::c_int = 1;
+pub const CLD_KILLED: ::c_int = 2;
+pub const CLD_DUMPED: ::c_int = 3;
+pub const CLD_TRAPPED: ::c_int = 4;
+pub const CLD_STOPPED: ::c_int = 5;
+pub const CLD_CONTINUED: ::c_int = 6;
+
+pub const POLLIN: ::c_short = 0x1;
+pub const POLLPRI: ::c_short = 0x2;
+pub const POLLOUT: ::c_short = 0x4;
+pub const POLLERR: ::c_short = 0x8;
+pub const POLLHUP: ::c_short = 0x10;
+pub const POLLNVAL: ::c_short = 0x20;
 pub const POLLRDNORM: ::c_short = 0x040;
 pub const POLLWRNORM: ::c_short = 0x004;
 pub const POLLRDBAND: ::c_short = 0x080;
 pub const POLLWRBAND: ::c_short = 0x100;
 
+pub const BIOCGBLEN: ::c_ulong = 0x40044266;
+pub const BIOCSBLEN: ::c_ulong = 0xc0044266;
+pub const BIOCFLUSH: ::c_uint = 0x20004268;
+pub const BIOCPROMISC: ::c_uint = 0x20004269;
+pub const BIOCGDLT: ::c_ulong = 0x4004426a;
+pub const BIOCGETIF: ::c_ulong = 0x4020426b;
+pub const BIOCSETIF: ::c_ulong = 0x8020426c;
+pub const BIOCGSTATS: ::c_ulong = 0x4008426f;
+pub const BIOCIMMEDIATE: ::c_ulong = 0x80044270;
+pub const BIOCVERSION: ::c_ulong = 0x40044271;
+pub const BIOCGHDRCMPLT: ::c_ulong = 0x40044274;
+pub const BIOCSHDRCMPLT: ::c_ulong = 0x80044275;
+pub const SIOCGIFADDR: ::c_ulong = 0xc0206921;
+
+pub const REG_BASIC: ::c_int = 0o0000;
+pub const REG_EXTENDED: ::c_int = 0o0001;
+pub const REG_ICASE: ::c_int = 0o0002;
+pub const REG_NOSUB: ::c_int = 0o0004;
+pub const REG_NEWLINE: ::c_int = 0o0010;
+pub const REG_NOSPEC: ::c_int = 0o0020;
+pub const REG_PEND: ::c_int = 0o0040;
+pub const REG_DUMP: ::c_int = 0o0200;
+
+pub const REG_NOMATCH: ::c_int = 1;
+pub const REG_BADPAT: ::c_int = 2;
+pub const REG_ECOLLATE: ::c_int = 3;
+pub const REG_ECTYPE: ::c_int = 4;
+pub const REG_EESCAPE: ::c_int = 5;
+pub const REG_ESUBREG: ::c_int = 6;
+pub const REG_EBRACK: ::c_int = 7;
+pub const REG_EPAREN: ::c_int = 8;
+pub const REG_EBRACE: ::c_int = 9;
+pub const REG_BADBR: ::c_int = 10;
+pub const REG_ERANGE: ::c_int = 11;
+pub const REG_ESPACE: ::c_int = 12;
+pub const REG_BADRPT: ::c_int = 13;
+pub const REG_EMPTY: ::c_int = 14;
+pub const REG_ASSERT: ::c_int = 15;
+pub const REG_INVARG: ::c_int = 16;
+pub const REG_ATOI: ::c_int = 255;
+pub const REG_ITOA: ::c_int = 0o0400;
+
+pub const REG_NOTBOL: ::c_int = 0o00001;
+pub const REG_NOTEOL: ::c_int = 0o00002;
+pub const REG_STARTEND: ::c_int = 0o00004;
+pub const REG_TRACE: ::c_int = 0o00400;
+pub const REG_LARGE: ::c_int = 0o01000;
+pub const REG_BACKR: ::c_int = 0o02000;
+
+pub const TIOCCBRK: ::c_uint = 0x2000747a;
+pub const TIOCSBRK: ::c_uint = 0x2000747b;
+
+pub const PRIO_PROCESS: ::c_int = 0;
+pub const PRIO_PGRP: ::c_int = 1;
+pub const PRIO_USER: ::c_int = 2;
+
+pub const ITIMER_REAL: ::c_int = 0;
+pub const ITIMER_VIRTUAL: ::c_int = 1;
+pub const ITIMER_PROF: ::c_int = 2;
+
 f! {
+    pub fn CMSG_FIRSTHDR(mhdr: *const ::msghdr) -> *mut ::cmsghdr {
+        if (*mhdr).msg_controllen as usize >= ::mem::size_of::<::cmsghdr>() {
+            (*mhdr).msg_control as *mut ::cmsghdr
+        } else {
+            0 as *mut ::cmsghdr
+        }
+    }
+
     pub fn FD_CLR(fd: ::c_int, set: *mut fd_set) -> () {
-        let bits = mem::size_of_val(&(*set).fds_bits[0]) * 8;
+        let bits = ::mem::size_of_val(&(*set).fds_bits[0]) * 8;
         let fd = fd as usize;
         (*set).fds_bits[fd / bits] &= !(1 << (fd % bits));
         return
     }
 
-    pub fn FD_ISSET(fd: ::c_int, set: *mut fd_set) -> bool {
-        let bits = mem::size_of_val(&(*set).fds_bits[0]) * 8;
+    pub fn FD_ISSET(fd: ::c_int, set: *const fd_set) -> bool {
+        let bits = ::mem::size_of_val(&(*set).fds_bits[0]) * 8;
         let fd = fd as usize;
         return ((*set).fds_bits[fd / bits] & (1 << (fd % bits))) != 0
     }
 
     pub fn FD_SET(fd: ::c_int, set: *mut fd_set) -> () {
-        let bits = mem::size_of_val(&(*set).fds_bits[0]) * 8;
+        let bits = ::mem::size_of_val(&(*set).fds_bits[0]) * 8;
         let fd = fd as usize;
         (*set).fds_bits[fd / bits] |= 1 << (fd % bits);
         return
@@ -344,29 +575,60 @@ f! {
             *slot = 0;
         }
     }
+}
 
-    pub fn WTERMSIG(status: ::c_int) -> ::c_int {
+safe_f! {
+    pub {const} fn WTERMSIG(status: ::c_int) -> ::c_int {
         status & 0o177
     }
 
-    pub fn WIFEXITED(status: ::c_int) -> bool {
+    pub {const} fn WIFEXITED(status: ::c_int) -> bool {
         (status & 0o177) == 0
     }
 
-    pub fn WEXITSTATUS(status: ::c_int) -> ::c_int {
+    pub {const} fn WEXITSTATUS(status: ::c_int) -> ::c_int {
         status >> 8
     }
 
-    pub fn WCOREDUMP(status: ::c_int) -> bool {
+    pub {const} fn WCOREDUMP(status: ::c_int) -> bool {
         (status & 0o200) != 0
+    }
+
+    pub {const} fn QCMD(cmd: ::c_int, type_: ::c_int) -> ::c_int {
+        (cmd << 8) | (type_ & 0x00ff)
     }
 }
 
-extern {
+extern "C" {
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "getrlimit$UNIX2003"
+    )]
+    pub fn getrlimit(resource: ::c_int, rlim: *mut ::rlimit) -> ::c_int;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "setrlimit$UNIX2003"
+    )]
+    pub fn setrlimit(resource: ::c_int, rlim: *const ::rlimit) -> ::c_int;
+
+    pub fn strerror_r(errnum: ::c_int, buf: *mut c_char, buflen: ::size_t) -> ::c_int;
+    pub fn abs(i: ::c_int) -> ::c_int;
+    pub fn labs(i: ::c_long) -> ::c_long;
+    #[cfg_attr(
+        all(target_os = "freebsd", any(freebsd12, freebsd11, freebsd10)),
+        link_name = "rand@FBSD_1.0"
+    )]
+    pub fn rand() -> ::c_int;
+    #[cfg_attr(
+        all(target_os = "freebsd", any(freebsd12, freebsd11, freebsd10)),
+        link_name = "srand@FBSD_1.0"
+    )]
+    pub fn srand(seed: ::c_uint);
+
     pub fn getifaddrs(ifap: *mut *mut ::ifaddrs) -> ::c_int;
     pub fn freeifaddrs(ifa: *mut ::ifaddrs);
-    pub fn setgroups(ngroups: ::c_int,
-                     ptr: *const ::gid_t) -> ::c_int;
+    pub fn setgroups(ngroups: ::c_int, ptr: *const ::gid_t) -> ::c_int;
+    pub fn setlogin(name: *const ::c_char) -> ::c_int;
     pub fn ioctl(fd: ::c_int, request: ::c_ulong, ...) -> ::c_int;
     pub fn kqueue() -> ::c_int;
     pub fn unmount(target: *const ::c_char, arg: ::c_int) -> ::c_int;
@@ -375,155 +637,275 @@ extern {
     pub fn getpwent() -> *mut passwd;
     pub fn setpwent();
     pub fn endpwent();
+    pub fn endgrent();
+    pub fn getgrent() -> *mut ::group;
+
     pub fn getprogname() -> *const ::c_char;
     pub fn setprogname(name: *const ::c_char);
     pub fn getloadavg(loadavg: *mut ::c_double, nelem: ::c_int) -> ::c_int;
     pub fn if_nameindex() -> *mut if_nameindex;
     pub fn if_freenameindex(ptr: *mut if_nameindex);
 
-    pub fn getpeereid(socket: ::c_int,
-                      euid: *mut ::uid_t,
-                      egid: *mut ::gid_t) -> ::c_int;
+    pub fn getpeereid(socket: ::c_int, euid: *mut ::uid_t, egid: *mut ::gid_t) -> ::c_int;
 
-    #[cfg_attr(target_os = "macos", link_name = "glob$INODE64")]
+    #[cfg_attr(
+        all(target_os = "macos", not(target_arch = "aarch64")),
+        link_name = "glob$INODE64"
+    )]
     #[cfg_attr(target_os = "netbsd", link_name = "__glob30")]
-    pub fn glob(pattern: *const ::c_char,
-                flags: ::c_int,
-                errfunc: Option<extern fn(epath: *const ::c_char,
-                                          errno: ::c_int) -> ::c_int>,
-                pglob: *mut ::glob_t) -> ::c_int;
+    #[cfg_attr(
+        all(target_os = "freebsd", any(freebsd11, freebsd10)),
+        link_name = "glob@FBSD_1.0"
+    )]
+    pub fn glob(
+        pattern: *const ::c_char,
+        flags: ::c_int,
+        errfunc: ::Option<extern "C" fn(epath: *const ::c_char, errno: ::c_int) -> ::c_int>,
+        pglob: *mut ::glob_t,
+    ) -> ::c_int;
     #[cfg_attr(target_os = "netbsd", link_name = "__globfree30")]
+    #[cfg_attr(
+        all(target_os = "freebsd", any(freebsd11, freebsd10)),
+        link_name = "globfree@FBSD_1.0"
+    )]
     pub fn globfree(pglob: *mut ::glob_t);
 
-    pub fn posix_madvise(addr: *mut ::c_void, len: ::size_t, advice: ::c_int)
-                         -> ::c_int;
+    pub fn posix_madvise(addr: *mut ::c_void, len: ::size_t, advice: ::c_int) -> ::c_int;
 
     pub fn shm_unlink(name: *const ::c_char) -> ::c_int;
 
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86_64"),
-               link_name = "seekdir$INODE64")]
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
-               link_name = "seekdir$INODE64$UNIX2003")]
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86_64"),
+        link_name = "seekdir$INODE64"
+    )]
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "seekdir$INODE64$UNIX2003"
+    )]
     pub fn seekdir(dirp: *mut ::DIR, loc: ::c_long);
 
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86_64"),
-               link_name = "telldir$INODE64")]
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
-               link_name = "telldir$INODE64$UNIX2003")]
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86_64"),
+        link_name = "telldir$INODE64"
+    )]
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "telldir$INODE64$UNIX2003"
+    )]
     pub fn telldir(dirp: *mut ::DIR) -> ::c_long;
-    pub fn madvise(addr: *mut ::c_void, len: ::size_t, advice: ::c_int)
-                  -> ::c_int;
+    pub fn madvise(addr: *mut ::c_void, len: ::size_t, advice: ::c_int) -> ::c_int;
 
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
-               link_name = "msync$UNIX2003")]
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "msync$UNIX2003"
+    )]
     #[cfg_attr(target_os = "netbsd", link_name = "__msync13")]
     pub fn msync(addr: *mut ::c_void, len: ::size_t, flags: ::c_int) -> ::c_int;
 
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
-               link_name = "recvfrom$UNIX2003")]
-    pub fn recvfrom(socket: ::c_int, buf: *mut ::c_void, len: ::size_t,
-                    flags: ::c_int, addr: *mut ::sockaddr,
-                    addrlen: *mut ::socklen_t) -> ::ssize_t;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "recvfrom$UNIX2003"
+    )]
+    pub fn recvfrom(
+        socket: ::c_int,
+        buf: *mut ::c_void,
+        len: ::size_t,
+        flags: ::c_int,
+        addr: *mut ::sockaddr,
+        addrlen: *mut ::socklen_t,
+    ) -> ::ssize_t;
     pub fn mkstemps(template: *mut ::c_char, suffixlen: ::c_int) -> ::c_int;
+    #[cfg_attr(target_os = "netbsd", link_name = "__futimes50")]
     pub fn futimes(fd: ::c_int, times: *const ::timeval) -> ::c_int;
     pub fn nl_langinfo(item: ::nl_item) -> *mut ::c_char;
 
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
-               link_name = "bind$UNIX2003")]
-    pub fn bind(socket: ::c_int, address: *const ::sockaddr,
-                address_len: ::socklen_t) -> ::c_int;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "bind$UNIX2003"
+    )]
+    pub fn bind(socket: ::c_int, address: *const ::sockaddr, address_len: ::socklen_t) -> ::c_int;
 
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
-               link_name = "writev$UNIX2003")]
-    pub fn writev(fd: ::c_int,
-                  iov: *const ::iovec,
-                  iovcnt: ::c_int) -> ::ssize_t;
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
-               link_name = "readv$UNIX2003")]
-    pub fn readv(fd: ::c_int,
-                 iov: *const ::iovec,
-                 iovcnt: ::c_int) -> ::ssize_t;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "writev$UNIX2003"
+    )]
+    pub fn writev(fd: ::c_int, iov: *const ::iovec, iovcnt: ::c_int) -> ::ssize_t;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "readv$UNIX2003"
+    )]
+    pub fn readv(fd: ::c_int, iov: *const ::iovec, iovcnt: ::c_int) -> ::ssize_t;
 
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
-               link_name = "sendmsg$UNIX2003")]
-    pub fn sendmsg(fd: ::c_int,
-                   msg: *const ::msghdr,
-                   flags: ::c_int) -> ::ssize_t;
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
-               link_name = "recvmsg$UNIX2003")]
-    pub fn recvmsg(fd: ::c_int, msg: *mut ::msghdr, flags: ::c_int)
-                   -> ::ssize_t;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "sendmsg$UNIX2003"
+    )]
+    pub fn sendmsg(fd: ::c_int, msg: *const ::msghdr, flags: ::c_int) -> ::ssize_t;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "recvmsg$UNIX2003"
+    )]
+    pub fn recvmsg(fd: ::c_int, msg: *mut ::msghdr, flags: ::c_int) -> ::ssize_t;
 
     pub fn sync();
-    #[cfg_attr(target_os = "solaris", link_name = "__posix_getgrgid_r")]
-    pub fn getgrgid_r(uid: ::uid_t,
-                      grp: *mut ::group,
-                      buf: *mut ::c_char,
-                      buflen: ::size_t,
-                      result: *mut *mut ::group) -> ::c_int;
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
-               link_name = "sigaltstack$UNIX2003")]
+    pub fn getgrgid_r(
+        gid: ::gid_t,
+        grp: *mut ::group,
+        buf: *mut ::c_char,
+        buflen: ::size_t,
+        result: *mut *mut ::group,
+    ) -> ::c_int;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "sigaltstack$UNIX2003"
+    )]
     #[cfg_attr(target_os = "netbsd", link_name = "__sigaltstack14")]
-    pub fn sigaltstack(ss: *const stack_t,
-                       oss: *mut stack_t) -> ::c_int;
+    pub fn sigaltstack(ss: *const stack_t, oss: *mut stack_t) -> ::c_int;
     pub fn sem_close(sem: *mut sem_t) -> ::c_int;
     pub fn getdtablesize() -> ::c_int;
-    #[cfg_attr(target_os = "solaris", link_name = "__posix_getgrnam_r")]
-    pub fn getgrnam_r(name: *const ::c_char,
-                      grp: *mut ::group,
-                      buf: *mut ::c_char,
-                      buflen: ::size_t,
-                      result: *mut *mut ::group) -> ::c_int;
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
-               link_name = "pthread_sigmask$UNIX2003")]
-    pub fn pthread_sigmask(how: ::c_int, set: *const sigset_t,
-                           oldset: *mut sigset_t) -> ::c_int;
+    pub fn getgrnam_r(
+        name: *const ::c_char,
+        grp: *mut ::group,
+        buf: *mut ::c_char,
+        buflen: ::size_t,
+        result: *mut *mut ::group,
+    ) -> ::c_int;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "pthread_sigmask$UNIX2003"
+    )]
+    pub fn pthread_sigmask(how: ::c_int, set: *const sigset_t, oldset: *mut sigset_t) -> ::c_int;
     pub fn sem_open(name: *const ::c_char, oflag: ::c_int, ...) -> *mut sem_t;
     pub fn getgrnam(name: *const ::c_char) -> *mut ::group;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "pthread_cancel$UNIX2003"
+    )]
+    pub fn pthread_cancel(thread: ::pthread_t) -> ::c_int;
     pub fn pthread_kill(thread: ::pthread_t, sig: ::c_int) -> ::c_int;
+    pub fn sched_get_priority_min(policy: ::c_int) -> ::c_int;
+    pub fn sched_get_priority_max(policy: ::c_int) -> ::c_int;
     pub fn sem_unlink(name: *const ::c_char) -> ::c_int;
-    pub fn daemon(nochdir: ::c_int, noclose: ::c_int) -> ::c_int;
     #[cfg_attr(target_os = "netbsd", link_name = "__getpwnam_r50")]
-    #[cfg_attr(target_os = "solaris", link_name = "__posix_getpwnam_r")]
-    pub fn getpwnam_r(name: *const ::c_char,
-                      pwd: *mut passwd,
-                      buf: *mut ::c_char,
-                      buflen: ::size_t,
-                      result: *mut *mut passwd) -> ::c_int;
+    pub fn getpwnam_r(
+        name: *const ::c_char,
+        pwd: *mut passwd,
+        buf: *mut ::c_char,
+        buflen: ::size_t,
+        result: *mut *mut passwd,
+    ) -> ::c_int;
     #[cfg_attr(target_os = "netbsd", link_name = "__getpwuid_r50")]
-    #[cfg_attr(target_os = "solaris", link_name = "__posix_getpwuid_r")]
-    pub fn getpwuid_r(uid: ::uid_t,
-                      pwd: *mut passwd,
-                      buf: *mut ::c_char,
-                      buflen: ::size_t,
-                      result: *mut *mut passwd) -> ::c_int;
-    #[cfg_attr(all(target_os = "macos", target_arch ="x86"),
-               link_name = "sigwait$UNIX2003")]
-    #[cfg_attr(target_os = "solaris", link_name = "__posix_sigwait")]
-    pub fn sigwait(set: *const sigset_t,
-                   sig: *mut ::c_int) -> ::c_int;
-    pub fn pthread_atfork(prepare: Option<unsafe extern fn()>,
-                          parent: Option<unsafe extern fn()>,
-                          child: Option<unsafe extern fn()>) -> ::c_int;
+    pub fn getpwuid_r(
+        uid: ::uid_t,
+        pwd: *mut passwd,
+        buf: *mut ::c_char,
+        buflen: ::size_t,
+        result: *mut *mut passwd,
+    ) -> ::c_int;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "sigwait$UNIX2003"
+    )]
+    pub fn sigwait(set: *const sigset_t, sig: *mut ::c_int) -> ::c_int;
+    pub fn pthread_atfork(
+        prepare: ::Option<unsafe extern "C" fn()>,
+        parent: ::Option<unsafe extern "C" fn()>,
+        child: ::Option<unsafe extern "C" fn()>,
+    ) -> ::c_int;
     pub fn getgrgid(gid: ::gid_t) -> *mut ::group;
-    #[cfg_attr(all(target_os = "macos", target_arch = "x86"),
-               link_name = "popen$UNIX2003")]
-    pub fn popen(command: *const c_char,
-                 mode: *const c_char) -> *mut ::FILE;
-    pub fn faccessat(dirfd: ::c_int, pathname: *const ::c_char,
-                     mode: ::c_int, flags: ::c_int) -> ::c_int;
-    pub fn pthread_create(native: *mut ::pthread_t,
-                          attr: *const ::pthread_attr_t,
-                          f: extern fn(*mut ::c_void) -> *mut ::c_void,
-                          value: *mut ::c_void) -> ::c_int;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "popen$UNIX2003"
+    )]
+    pub fn popen(command: *const c_char, mode: *const c_char) -> *mut ::FILE;
+    pub fn faccessat(
+        dirfd: ::c_int,
+        pathname: *const ::c_char,
+        mode: ::c_int,
+        flags: ::c_int,
+    ) -> ::c_int;
+    pub fn pthread_create(
+        native: *mut ::pthread_t,
+        attr: *const ::pthread_attr_t,
+        f: extern "C" fn(*mut ::c_void) -> *mut ::c_void,
+        value: *mut ::c_void,
+    ) -> ::c_int;
+    pub fn acct(filename: *const ::c_char) -> ::c_int;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "wait4$UNIX2003"
+    )]
+    #[cfg_attr(
+        all(target_os = "freebsd", any(freebsd12, freebsd11, freebsd10)),
+        link_name = "wait4@FBSD_1.0"
+    )]
+    pub fn wait4(
+        pid: ::pid_t,
+        status: *mut ::c_int,
+        options: ::c_int,
+        rusage: *mut ::rusage,
+    ) -> ::pid_t;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "getitimer$UNIX2003"
+    )]
+    pub fn getitimer(which: ::c_int, curr_value: *mut ::itimerval) -> ::c_int;
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "x86"),
+        link_name = "setitimer$UNIX2003"
+    )]
+    pub fn setitimer(
+        which: ::c_int,
+        new_value: *const ::itimerval,
+        old_value: *mut ::itimerval,
+    ) -> ::c_int;
+
+    pub fn regcomp(preg: *mut regex_t, pattern: *const ::c_char, cflags: ::c_int) -> ::c_int;
+
+    pub fn regexec(
+        preg: *const regex_t,
+        input: *const ::c_char,
+        nmatch: ::size_t,
+        pmatch: *mut regmatch_t,
+        eflags: ::c_int,
+    ) -> ::c_int;
+
+    pub fn regerror(
+        errcode: ::c_int,
+        preg: *const regex_t,
+        errbuf: *mut ::c_char,
+        errbuf_size: ::size_t,
+    ) -> ::size_t;
+
+    pub fn regfree(preg: *mut regex_t);
+
+    pub fn arc4random() -> u32;
+    pub fn arc4random_buf(buf: *mut ::c_void, size: ::size_t);
+    pub fn arc4random_uniform(l: u32) -> u32;
+
+    pub fn drand48() -> ::c_double;
+    pub fn erand48(xseed: *mut ::c_ushort) -> ::c_double;
+    pub fn lrand48() -> ::c_long;
+    pub fn nrand48(xseed: *mut ::c_ushort) -> ::c_long;
+    pub fn mrand48() -> ::c_long;
+    pub fn jrand48(xseed: *mut ::c_ushort) -> ::c_long;
+    pub fn srand48(seed: ::c_long);
+    pub fn seed48(xseed: *mut ::c_ushort) -> *mut ::c_ushort;
+    pub fn lcong48(p: *mut ::c_ushort);
+    pub fn getopt_long(
+        argc: ::c_int,
+        argv: *const *mut c_char,
+        optstring: *const c_char,
+        longopts: *const option,
+        longindex: *mut ::c_int,
+    ) -> ::c_int;
 }
 
 cfg_if! {
-    if #[cfg(any(target_os = "macos", target_os = "ios"))] {
+    if #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", target_os = "watchos"))] {
         mod apple;
         pub use self::apple::*;
-    } else if #[cfg(any(target_os = "openbsd", target_os = "netbsd",
-                        target_os = "bitrig"))] {
+    } else if #[cfg(any(target_os = "openbsd", target_os = "netbsd"))] {
         mod netbsdlike;
         pub use self::netbsdlike::*;
     } else if #[cfg(any(target_os = "freebsd", target_os = "dragonfly"))] {

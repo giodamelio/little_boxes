@@ -3,6 +3,7 @@
 //! This module implements a table-driven UTF-8 parser which should
 //! theoretically contain the minimal number of branches (1). The only branch is
 //! on the `Action` returned from unpacking a transition.
+#![deny(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
 #![cfg_attr(all(feature = "nightly", test), feature(test))]
 #![no_std]
 
@@ -24,7 +25,7 @@ pub trait Receiver {
 /// A parser for Utf8 Characters
 ///
 /// Repeatedly call `advance` with bytes to emit Utf8 characters
-#[derive(Default)]
+#[derive(Clone, Default, PartialEq, Eq, Debug)]
 pub struct Parser {
     point: u32,
     state: State,
