@@ -28,7 +28,8 @@ impl DrawBox for SimpleBox {
     fn new(content: Vec<String>, charset: Charset) -> SimpleBox {
         //  Get the longest line in the output
         let mut sorted_input = content.clone();
-        sorted_input.sort_by(|a, b| b.len().cmp(&a.len()));
+
+        sorted_input.sort_by_key(|b| std::cmp::Reverse(b.len()));
         let max_length = sorted_input[0].len();
 
         SimpleBox {
@@ -87,7 +88,7 @@ impl<'a> DrawBox for TitleBox<'a> {
     fn new(content: Vec<String>, charset: Charset) -> TitleBox<'a> {
         //  Get the longest line in the output
         let mut sorted_input = content.clone();
-        sorted_input.sort_by(|a, b| b.len().cmp(&a.len()));
+        sorted_input.sort_by_key(|b| std::cmp::Reverse(b.len()));
         let max_length = sorted_input[0].len();
 
         TitleBox {
@@ -115,12 +116,10 @@ impl<'a> DrawBox for TitleBox<'a> {
         );
 
         let title_length = self.title.len() + 5;
-        let num_pad: usize = if title_length < self.max_length {
-            self.max_length + 2 - title_length
-        } else if title_length == self.max_length {
-            2
-        } else {
-            1
+        let num_pad: usize = match title_length.cmp(&self.max_length) {
+            std::cmp::Ordering::Less => self.max_length + 2 - title_length,
+            std::cmp::Ordering::Greater => 1,
+            std::cmp::Ordering::Equal => 2,
         };
         for _ in 0..num_pad {
             print!("{}", self.charset.horizontal)
@@ -135,12 +134,10 @@ impl<'a> DrawBox for TitleBox<'a> {
             // Pad shorter lines with spaces
             let length: usize = count_visible_chars(line);
             let title_length = self.title.len() + 5;
-            let num_pad: usize = if title_length < self.max_length {
-                self.max_length - length
-            } else if title_length == self.max_length {
-                title_length - length
-            } else {
-                title_length - length - 1
+            let num_pad: usize = match title_length.cmp(&self.max_length) {
+                std::cmp::Ordering::Less => self.max_length - length,
+                std::cmp::Ordering::Greater => title_length - length - 1,
+                std::cmp::Ordering::Equal => title_length - length,
             };
             for _ in 0..num_pad {
                 print!(" ");
@@ -153,12 +150,10 @@ impl<'a> DrawBox for TitleBox<'a> {
     fn print_bottom(&self) {
         print!("{}", self.charset.corner_down_left);
         let title_length = self.title.len() + 5;
-        let num_pad: usize = if title_length < self.max_length {
-            self.max_length + 2
-        } else if title_length == self.max_length {
-            title_length + 2
-        } else {
-            title_length + 1
+        let num_pad: usize = match title_length.cmp(&self.max_length) {
+            std::cmp::Ordering::Less => self.max_length + 2,
+            std::cmp::Ordering::Greater => title_length + 1,
+            std::cmp::Ordering::Equal => title_length + 2,
         };
         for _ in 0..num_pad {
             print!("{}", self.charset.horizontal)
@@ -179,10 +174,10 @@ mod tests {
 
     #[test]
     fn test_count_visible_chars() {
-        assert_eq!(3, count_visible_chars(&"abc"), "Three normal ASCII chars");
+        assert_eq!(3, count_visible_chars("abc"), "Three normal ASCII chars");
         assert_eq!(
             3,
-            count_visible_chars(&"\u{001b}[31mabc\u{001b}[0m"),
+            count_visible_chars("\u{001b}[31mabc\u{001b}[0m"),
             "Three ASCII chars made red"
         );
     }
