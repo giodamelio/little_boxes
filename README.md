@@ -10,6 +10,9 @@ Adds boxes around stdin. Optionally adds a title.
 ```sh
 # From crates.io
 $ cargo install little_boxes
+
+# Try it out with Nix flakes
+$ echo "Hello World" | nix run github:giodamelio/little_boxes
 ```
 
 # Usage
