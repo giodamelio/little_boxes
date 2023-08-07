@@ -84,6 +84,7 @@
 
               rustc
               cargo
+              cargo-edit
               rust-analyzer # LSP Server
               clippy # Linter
               lefthook # Git hook manager

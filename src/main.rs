@@ -2,7 +2,7 @@ use std::io;
 use std::io::prelude::*;
 use std::process;
 
-use clap::{crate_authors, crate_description, crate_version, App, Arg};
+use clap::{arg, command};
 
 mod draw_box;
 use self::draw_box::{DrawBox, SimpleBox, TitleBox};
@@ -10,34 +10,14 @@ mod charset;
 use self::charset::{get_charset, Charset};
 
 fn main() {
-    let matches = App::new("little_boxes")
-        .version(crate_version!())
-        .author(crate_authors!())
-        .about(crate_description!())
-        .max_term_width(80)
+    let matches = command!()
+        .arg(arg!(-t --title <TITLE> "Add a title to the box").required(false))
         .arg(
-            Arg::with_name("title")
-                .short("t")
-                .long("title")
-                .takes_value(true)
-                .value_name("title")
-                .help("Add a title to the box"),
+            arg!(-c --charset <CHARSET> "The charset to draw the box with")
+                .value_parser(["thick", "thin", "double", "box", "rounded", "dot"])
+                .default_value("thick"),
         )
-        .arg(
-            Arg::with_name("charset")
-                .short("c")
-                .long("charset")
-                .takes_value(true)
-                .possible_values(&["thick", "thin", "double", "box", "rounded", "dot"])
-                .default_value("thick")
-                .value_name("charset")
-                .help("The charset to draw the box with"),
-        )
-        .arg(
-            Arg::with_name("all")
-                .long("all")
-                .help("Compare all charsets"),
-        )
+        .arg(arg!(--all "Compare all charsets"))
         .get_matches();
 
     // Read stdin and convert to vector of Strings
@@ -53,13 +33,13 @@ fn main() {
         .collect();
 
     // Compare all the charsets
-    if matches.is_present("all") {
+    if let Some(true) = matches.get_one::<bool>("all") {
         let charsets = vec!["thick", "thin", "double", "box", "rounded", "dot"];
 
         for charset_name in charsets {
             let charset = get_charset(charset_name);
             println!("{}:", charset_name);
-            print_box(input.clone(), matches.value_of("title"), charset);
+            print_box(input.clone(), matches.get_one::<String>("title"), charset);
         }
 
         process::exit(0);
@@ -68,16 +48,16 @@ fn main() {
     // It is safe to .unwrap here because Clap's default will ensure that there is always a value
     print_box(
         input,
-        matches.value_of("title"),
+        matches.get_one::<String>("title"),
         get_charset(
             matches
-                .value_of("charset")
+                .get_one::<String>("charset")
                 .expect("Invalid charset recieved from Clap"),
         ),
     );
 }
 
-fn print_box(content: Vec<String>, title: Option<&str>, charset: Charset) {
+fn print_box(content: Vec<String>, title: Option<&String>, charset: Charset) {
     match title {
         Some(title) => {
             let mut title_box: TitleBox = DrawBox::new(content, charset);
