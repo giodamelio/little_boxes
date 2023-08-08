@@ -5,8 +5,10 @@ use std::path::PathBuf;
 use std::process;
 
 use anyhow::{Context, Result};
-use clap::{arg, command, value_parser, ArgMatches};
+use clap::ArgMatches;
 
+mod cli;
+use self::cli::cli;
 mod draw_box;
 use self::draw_box::{DrawBox, SimpleBox, TitleBox};
 mod charset;
@@ -30,19 +32,7 @@ fn get_input(matches: &ArgMatches) -> Result<Vec<String>> {
 }
 
 fn run() -> Result<()> {
-    let matches = command!()
-        .arg(arg!(-t --title <TITLE> "Add a title to the box").required(false))
-        .arg(
-            arg!(-c --charset <CHARSET> "The charset to draw the box with")
-                .value_parser(["thick", "thin", "double", "box", "rounded", "dot"])
-                .default_value("thick"),
-        )
-        .arg(
-            arg!(-f --file <FILE> "Read input from a file instead of stdin")
-                .value_parser(value_parser!(PathBuf)),
-        )
-        .arg(arg!(--all "Compare all charsets"))
-        .get_matches();
+    let matches = cli().get_matches();
 
     let input = get_input(&matches)?;
 
