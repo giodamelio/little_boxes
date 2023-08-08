@@ -1,15 +1,33 @@
-use std::io;
+use std::fs::File;
 use std::io::prelude::*;
+use std::io::{self, BufReader};
+use std::path::PathBuf;
 use std::process;
 
-use clap::{arg, command};
+use clap::{arg, command, value_parser, ArgMatches};
 
 mod draw_box;
 use self::draw_box::{DrawBox, SimpleBox, TitleBox};
 mod charset;
 use self::charset::{get_charset, Charset};
 
-fn main() {
+fn get_input(matches: &ArgMatches) -> io::Result<Vec<String>> {
+    // Read from a file if the flag is passed
+    if let Some(file_path) = matches.get_one::<PathBuf>("file") {
+        dbg!(file_path);
+
+        let file = File::open(file_path)?;
+        let reader = BufReader::new(file);
+
+        return reader.lines().collect();
+    }
+
+    // Read stdin and convert to vector of Strings
+    let stdin = io::stdin();
+    stdin.lock().lines().collect()
+}
+
+fn run() -> io::Result<()> {
     let matches = command!()
         .arg(arg!(-t --title <TITLE> "Add a title to the box").required(false))
         .arg(
@@ -17,20 +35,14 @@ fn main() {
                 .value_parser(["thick", "thin", "double", "box", "rounded", "dot"])
                 .default_value("thick"),
         )
+        .arg(
+            arg!(-f --file <FILE> "Read input from a file instead of stdin")
+                .value_parser(value_parser!(PathBuf)),
+        )
         .arg(arg!(--all "Compare all charsets"))
         .get_matches();
 
-    // Read stdin and convert to vector of Strings
-    let stdin = io::stdin();
-    let input: Vec<String> = stdin
-        .lock()
-        .lines()
-        .map(|line| line.ok())
-        .map(|line| match line {
-            Some(a) => a,
-            None => String::new(),
-        })
-        .collect();
+    let input = get_input(&matches)?;
 
     // Compare all the charsets
     if let Some(true) = matches.get_one::<bool>("all") {
@@ -55,6 +67,8 @@ fn main() {
                 .expect("Invalid charset recieved from Clap"),
         ),
     );
+
+    Ok(())
 }
 
 fn print_box(content: Vec<String>, title: Option<&String>, charset: Charset) {
@@ -69,4 +83,14 @@ fn print_box(content: Vec<String>, title: Option<&String>, charset: Charset) {
             basic_box.print();
         }
     }
+}
+
+fn main() {
+    match run() {
+        Ok(_) => (),
+        Err(err) => {
+            println!("Error: {}", err);
+            std::process::exit(1);
+        }
+    };
 }
