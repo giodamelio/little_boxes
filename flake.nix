@@ -38,11 +38,22 @@
             cargoLock.lockFile = ./Cargo.lock;
             src = pkgs.lib.cleanSource ./.;
 
+            # Install the manpage
+            postBuild = ''
+              export manfilepath=$(find target/ -type f -wholename "*out/little_boxes.1" | head -n 1)
+              mv $manfilepath .
+            '';
+            postInstall = ''
+              mkdir -p $out/share/man/man1
+              cp little_boxes.1 $out/share/man/man1/
+            '';
+
             meta = with pkgs.lib; {
               description = manifest.description;
               homepage = manifest.homepage;
               license = licenses.mit;
               maintainers = [maintainers.giodamelio];
+              manpages = ["man/man1/little_boxes.1"];
             };
           };
 
