@@ -15,4 +15,7 @@ trycmd = {version = "0.14.16", features = ["default"]} # add "debug" feature if 
 strip-ansi-escapes = "0.1.1"
 anyhow = "1.0.72"
 
+[build-dependencies]
+clap_mangen = "0.2.12"
+
 [features]
