@@ -35,8 +35,8 @@
           pkgs.rustPlatform.buildRustPackage {
             pname = manifest.name;
             version = manifest.version;
-            cargoLock.lockFile = ./Cargo.lock;
             src = pkgs.lib.cleanSource ./.;
+            cargoVendorDir = "vendor";
 
             # Install the manpage
             postBuild = ''
