@@ -24,13 +24,18 @@ pub struct SimpleBox {
     max_length: usize,
 }
 
+fn calculate_max_length(mut content: Vec<String>) -> usize {
+    content.sort_unstable_by_key(|b| b.len());
+    match content.last() {
+        Some(line) => line.len(),
+        None => 0,
+    }
+}
+
 impl DrawBox for SimpleBox {
     fn new(content: Vec<String>, charset: Charset) -> SimpleBox {
         //  Get the longest line in the output
-        let mut sorted_input = content.clone();
-
-        sorted_input.sort_by_key(|b| std::cmp::Reverse(b.len()));
-        let max_length = sorted_input[0].len();
+        let max_length = calculate_max_length(content.clone());
 
         SimpleBox {
             content,
@@ -87,9 +92,7 @@ pub struct TitleBox<'a> {
 impl<'a> DrawBox for TitleBox<'a> {
     fn new(content: Vec<String>, charset: Charset) -> TitleBox<'a> {
         //  Get the longest line in the output
-        let mut sorted_input = content.clone();
-        sorted_input.sort_by_key(|b| std::cmp::Reverse(b.len()));
-        let max_length = sorted_input[0].len();
+        let max_length = calculate_max_length(content.clone());
 
         TitleBox {
             title: "",
@@ -180,5 +183,18 @@ mod tests {
             count_visible_chars("\u{001b}[31mabc\u{001b}[0m"),
             "Three ASCII chars made red"
         );
+    }
+
+    #[test]
+    fn test_calculate_max_length() {
+        let lines: Vec<String> = vec![
+            String::from("Hello"),
+            String::from("Hola"),
+            String::from("Caio"),
+        ];
+        assert_eq!(calculate_max_length(lines), 5);
+
+        let empty: Vec<String> = vec![];
+        assert_eq!(calculate_max_length(empty), 0);
     }
 }
