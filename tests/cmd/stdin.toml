@@ -1,0 +1,7 @@
+bin.name = "little_boxes"
+stdin = "Hello World"
+stdout = """
+┏━━━━━━━━━━━━━┓
+┃ Hello World ┃
+┗━━━━━━━━━━━━━┛
+"""

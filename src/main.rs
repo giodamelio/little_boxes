@@ -14,8 +14,6 @@ use self::charset::{get_charset, Charset};
 fn get_input(matches: &ArgMatches) -> io::Result<Vec<String>> {
     // Read from a file if the flag is passed
     if let Some(file_path) = matches.get_one::<PathBuf>("file") {
-        dbg!(file_path);
-
         let file = File::open(file_path)?;
         let reader = BufReader::new(file);
 
