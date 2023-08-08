@@ -4,6 +4,7 @@ use std::io::{self, BufReader};
 use std::path::PathBuf;
 use std::process;
 
+use anyhow::{Context, Result};
 use clap::{arg, command, value_parser, ArgMatches};
 
 mod draw_box;
@@ -11,21 +12,24 @@ use self::draw_box::{DrawBox, SimpleBox, TitleBox};
 mod charset;
 use self::charset::{get_charset, Charset};
 
-fn get_input(matches: &ArgMatches) -> io::Result<Vec<String>> {
-    // Read from a file if the flag is passed
-    if let Some(file_path) = matches.get_one::<PathBuf>("file") {
-        let file = File::open(file_path)?;
-        let reader = BufReader::new(file);
+fn get_input(matches: &ArgMatches) -> Result<Vec<String>> {
+    let input: Result<Vec<String>, io::Error> = match matches.get_one::<PathBuf>("file") {
+        Some(file_path) => {
+            let file = File::open(file_path)
+                .with_context(|| format!("Failed to open file {:?}", file_path))?;
+            let reader = BufReader::new(file);
+            reader.lines().collect()
+        }
+        None => {
+            let stdin = io::stdin();
+            stdin.lock().lines().collect()
+        }
+    };
 
-        return reader.lines().collect();
-    }
-
-    // Read stdin and convert to vector of Strings
-    let stdin = io::stdin();
-    stdin.lock().lines().collect()
+    input.with_context(|| "Failed to get input")
 }
 
-fn run() -> io::Result<()> {
+fn run() -> Result<()> {
     let matches = command!()
         .arg(arg!(-t --title <TITLE> "Add a title to the box").required(false))
         .arg(
