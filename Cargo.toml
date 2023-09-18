@@ -10,13 +10,13 @@ version = "1.8.0"
 edition = "2021"
 
 [dependencies]
-clap = {version = "4.3.19", features = ["default", "cargo"]}
+clap = {version = "4.4.3", features = ["default", "cargo"]}
 trycmd = {version = "0.14.16", features = ["default"]} # add "debug" feature if you're having trouble
 strip-ansi-escapes = "0.1.1"
 anyhow = "1.0.72"
 
 [build-dependencies]
-clap = {version = "4.3.19", features = ["default", "cargo"]}
+clap = {version = "4.4.3", features = ["default", "cargo"]}
 clap_mangen = "0.2.12"
 
 [features]
