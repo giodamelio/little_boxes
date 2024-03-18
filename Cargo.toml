@@ -11,7 +11,6 @@ edition = "2021"
 
 [dependencies]
 clap = {version = "4.5.3", features = ["default", "cargo"]}
-trycmd = {version = "0.15.0", features = ["default"]} # add "debug" feature if you're having trouble
 strip-ansi-escapes = "0.2.0"
 anyhow = "1.0.81"
 
@@ -19,5 +18,8 @@ anyhow = "1.0.81"
 clap = {version = "4.5.3", features = ["default", "cargo"]}
 clap_mangen = "0.2.20"
 clap_complete = "4.5.1"
+
+[dev-dependencies]
+trycmd = {version = "0.15.0", features = ["default"]} # add "debug" feature if you're having trouble
 
 [features]
