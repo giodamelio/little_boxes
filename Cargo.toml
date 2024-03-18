@@ -18,5 +18,6 @@ anyhow = "1.0.81"
 [build-dependencies]
 clap = {version = "4.5.3", features = ["default", "cargo"]}
 clap_mangen = "0.2.20"
+clap_complete = "4.5.1"
 
 [features]
