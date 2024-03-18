@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.64.0"
+rust-version = "1.74"
 name = "clap_mangen"
-version = "0.2.12"
+version = "0.2.20"
 include = [
     "build.rs",
     "src/**/*",
@@ -103,7 +103,7 @@ features = [
 default-features = false
 
 [dev-dependencies.snapbox]
-version = "0.4.11"
+version = "0.4.16"
 features = ["diff"]
 
 [features]

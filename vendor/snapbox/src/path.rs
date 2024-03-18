@@ -1,7 +1,15 @@
 //! Initialize working directories and assert on how they've changed
 
+#[doc(inline)]
+pub use crate::cargo_rustc_current_dir;
+#[doc(inline)]
+pub use crate::current_dir;
+#[doc(inline)]
+pub use crate::current_rs;
+
 #[cfg(feature = "path")]
 use crate::data::{NormalizeMatches, NormalizeNewlines, NormalizePaths};
+
 /// Working directory for tests
 #[derive(Debug)]
 pub struct PathFixture(PathFixtureInner);
@@ -40,8 +48,8 @@ impl PathFixture {
 
     #[cfg(feature = "path")]
     pub fn mutable_at(target: &std::path::Path) -> Result<Self, crate::Error> {
-        let _ = std::fs::remove_dir_all(&target);
-        std::fs::create_dir_all(&target)
+        let _ = std::fs::remove_dir_all(target);
+        std::fs::create_dir_all(target)
             .map_err(|e| format!("Failed to create {}: {}", target.display(), e))?;
         Ok(Self(PathFixtureInner::MutablePath(target.to_owned())))
     }
@@ -178,14 +186,13 @@ impl PathDiff {
                 }
                 FileType::File => {
                     let mut actual =
-                        crate::Data::read_from(&actual_path, None).map_err(Self::Failure)?;
+                        crate::Data::try_read_from(&actual_path, None).map_err(Self::Failure)?;
 
-                    let expected = crate::Data::read_from(&expected_path, None)
-                        .map(|d| d.normalize(NormalizeNewlines))
-                        .map_err(Self::Failure)?;
+                    let expected =
+                        crate::Data::read_from(&expected_path, None).normalize(NormalizeNewlines);
 
                     actual = actual
-                        .try_coerce(expected.format())
+                        .coerce_to(expected.intended_format())
                         .normalize(NormalizeNewlines);
 
                     if expected != actual {
@@ -215,7 +222,7 @@ impl PathDiff {
     ) -> impl Iterator<Item = Result<(std::path::PathBuf, std::path::PathBuf), Self>> + '_ {
         let pattern_root = pattern_root.into();
         let actual_root = actual_root.into();
-        Self::subset_matches_iter_inner(pattern_root, actual_root, substitutions)
+        Self::subset_matches_iter_inner(pattern_root, actual_root, substitutions, true)
     }
 
     #[cfg(feature = "path")]
@@ -223,6 +230,7 @@ impl PathDiff {
         expected_root: std::path::PathBuf,
         actual_root: std::path::PathBuf,
         substitutions: &crate::Substitutions,
+        normalize_paths: bool,
     ) -> impl Iterator<Item = Result<(std::path::PathBuf, std::path::PathBuf), Self>> + '_ {
         let walker = Walk::new(&expected_root);
         walker.map(move |r| {
@@ -256,15 +264,16 @@ impl PathDiff {
                 }
                 FileType::File => {
                     let mut actual =
-                        crate::Data::read_from(&actual_path, None).map_err(Self::Failure)?;
+                        crate::Data::try_read_from(&actual_path, None).map_err(Self::Failure)?;
 
-                    let expected = crate::Data::read_from(&expected_path, None)
-                        .map(|d| d.normalize(NormalizeNewlines))
-                        .map_err(Self::Failure)?;
+                    let expected =
+                        crate::Data::read_from(&expected_path, None).normalize(NormalizeNewlines);
 
+                    actual = actual.coerce_to(expected.intended_format());
+                    if normalize_paths {
+                        actual = actual.normalize(NormalizePaths);
+                    }
                     actual = actual
-                        .try_coerce(expected.format())
-                        .normalize(NormalizePaths)
                         .normalize(NormalizeNewlines)
                         .normalize(NormalizeMatches::new(substitutions, &expected));
 
@@ -400,11 +409,11 @@ impl PathDiff {
                 actual_target: _,
             } => shallow_copy(expected_path, actual_path),
             Self::ContentMismatch {
-                expected_path,
+                expected_path: _,
                 actual_path: _,
-                expected_content: _,
+                expected_content,
                 actual_content,
-            } => actual_content.write_to(expected_path),
+            } => actual_content.write_to(expected_content.source().unwrap()),
         }
     }
 }
@@ -577,7 +586,7 @@ fn copy_stats(
     dest: &std::path::Path,
 ) -> Result<(), std::io::Error> {
     let src_mtime = filetime::FileTime::from_last_modification_time(source_meta);
-    filetime::set_file_mtime(&dest, src_mtime)?;
+    filetime::set_file_mtime(dest, src_mtime)?;
 
     Ok(())
 }

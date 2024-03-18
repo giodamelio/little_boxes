@@ -1,11 +1,11 @@
 use winnow::combinator::cut_err;
 use winnow::combinator::delimited;
-use winnow::combinator::separated0;
+use winnow::combinator::separated;
+use winnow::combinator::trace;
 use winnow::token::one_of;
-use winnow::trace::trace;
 
 use crate::key::Key;
-use crate::parser::errors::CustomError;
+use crate::parser::error::CustomError;
 use crate::parser::key::key;
 use crate::parser::prelude::*;
 use crate::parser::trivia::ws;
@@ -44,6 +44,16 @@ fn table_from_pairs(
 
     for (path, kv) in v {
         let table = descend_path(&mut root, &path)?;
+
+        // "Likewise, using dotted keys to redefine tables already defined in [table] form is not allowed"
+        let mixed_table_types = table.is_dotted() == path.is_empty();
+        if mixed_table_types {
+            return Err(CustomError::DuplicateKey {
+                key: kv.key.get().into(),
+                table: None,
+            });
+        }
+
         let key: InternalString = kv.key.get_internal().into();
         match table.items.entry(key) {
             Entry::Vacant(o) => {
@@ -64,15 +74,26 @@ fn descend_path<'a>(
     mut table: &'a mut InlineTable,
     path: &'a [Key],
 ) -> Result<&'a mut InlineTable, CustomError> {
+    let dotted = !path.is_empty();
     for (i, key) in path.iter().enumerate() {
         let entry = table.entry_format(key).or_insert_with(|| {
             let mut new_table = InlineTable::new();
-            new_table.set_dotted(true);
+            new_table.set_implicit(dotted);
+            new_table.set_dotted(dotted);
 
             Value::InlineTable(new_table)
         });
         match *entry {
             Value::InlineTable(ref mut sweet_child_of_mine) => {
+                // Since tables cannot be defined more than once, redefining such tables using a
+                // [table] header is not allowed. Likewise, using dotted keys to redefine tables
+                // already defined in [table] form is not allowed.
+                if dotted && !sweet_child_of_mine.is_implicit() {
+                    return Err(CustomError::DuplicateKey {
+                        key: key.get().into(),
+                        table: None,
+                    });
+                }
                 table = sweet_child_of_mine;
             }
             ref v => {
@@ -103,7 +124,7 @@ fn inline_table_keyvals<'i>(
     move |input: &mut Input<'i>| {
         let check = check.recursing(input)?;
         (
-            separated0(keyval(check), INLINE_TABLE_SEP),
+            separated(0.., keyval(check), INLINE_TABLE_SEP),
             ws.span().map(RawString::with_span),
         )
             .parse_next(input)
@@ -144,6 +165,8 @@ fn keyval<'i>(
 }
 
 #[cfg(test)]
+#[cfg(feature = "parse")]
+#[cfg(feature = "display")]
 mod test {
     use super::*;
 

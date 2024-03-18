@@ -391,6 +391,34 @@ impl<F: ErrorFormatter> Error<F> {
         err
     }
 
+    pub(crate) fn subcommand_conflict(
+        cmd: &Command,
+        sub: String,
+        mut others: Vec<String>,
+        usage: Option<StyledStr>,
+    ) -> Self {
+        let mut err = Self::new(ErrorKind::ArgumentConflict).with_cmd(cmd);
+
+        #[cfg(feature = "error-context")]
+        {
+            let others = match others.len() {
+                0 => ContextValue::None,
+                1 => ContextValue::String(others.pop().unwrap()),
+                _ => ContextValue::Strings(others),
+            };
+            err = err.extend_context_unchecked([
+                (ContextKind::InvalidSubcommand, ContextValue::String(sub)),
+                (ContextKind::PriorArg, others),
+            ]);
+            if let Some(usage) = usage {
+                err = err
+                    .insert_context_unchecked(ContextKind::Usage, ContextValue::StyledStr(usage));
+            }
+        }
+
+        err
+    }
+
     pub(crate) fn empty_value(cmd: &Command, good_vals: &[String], arg: String) -> Self {
         Self::invalid_value(cmd, "".to_owned(), good_vals, arg)
     }
@@ -718,7 +746,7 @@ impl<F: ErrorFormatter> Error<F> {
                     let mut styled_suggestion = StyledStr::new();
                     let _ = write!(
                         styled_suggestion,
-                        "'{}{sub} --{flag}{}' exists",
+                        "'{}{sub} {flag}{}' exists",
                         valid.render(),
                         valid.render_reset()
                     );
@@ -727,7 +755,7 @@ impl<F: ErrorFormatter> Error<F> {
                 Some((flag, None)) => {
                     err = err.insert_context_unchecked(
                         ContextKind::SuggestedArg,
-                        ContextValue::String(format!("--{flag}")),
+                        ContextValue::String(flag),
                     );
                 }
                 None => {}

@@ -7,9 +7,10 @@ use crate::table::TableLike;
 use crate::{Array, InlineTable, Table, Value};
 
 /// Type representing either a value, a table, an array of tables, or none.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum Item {
     /// Type representing none.
+    #[default]
     None,
     /// Type representing value.
     Value(Value),
@@ -328,12 +329,7 @@ impl Clone for Item {
     }
 }
 
-impl Default for Item {
-    fn default() -> Self {
-        Item::None
-    }
-}
-
+#[cfg(feature = "parse")]
 impl FromStr for Item {
     type Err = crate::TomlError;
 
@@ -344,6 +340,7 @@ impl FromStr for Item {
     }
 }
 
+#[cfg(feature = "display")]
 impl std::fmt::Display for Item {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
@@ -363,6 +360,7 @@ impl std::fmt::Display for Item {
 ///
 /// # Examples
 /// ```rust
+/// # #[cfg(feature = "display")] {
 /// # use snapbox::assert_eq;
 /// # use toml_edit::*;
 /// let mut table = Table::default();
@@ -377,6 +375,7 @@ impl std::fmt::Display for Item {
 /// key2 = 42
 /// key3 = ["hello", '\, world']
 /// "#);
+/// # }
 /// ```
 pub fn value<V: Into<Value>>(v: V) -> Item {
     Item::Value(v.into())
@@ -390,4 +389,11 @@ pub fn table() -> Item {
 /// Returns an empty array of tables.
 pub fn array() -> Item {
     Item::ArrayOfTables(ArrayOfTables::new())
+}
+
+#[test]
+#[cfg(feature = "parse")]
+#[cfg(feature = "display")]
+fn string_roundtrip() {
+    value("hello").to_string().parse::<Item>().unwrap();
 }

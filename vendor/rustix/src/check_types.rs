@@ -1,3 +1,5 @@
+//! Macros for checking that types have the same layout as other types.
+
 #![allow(unused_macros)]
 
 /// Check that the size and alignment of a type match the `sys` bindings.
@@ -17,8 +19,8 @@ macro_rules! check_renamed_type {
     };
 }
 
-/// Check that the field of a struct has the same offset as the
-/// corresponding field in the `sys` bindings.
+/// Check that the field of a struct has the same offset as the corresponding
+/// field in the `sys` bindings.
 macro_rules! check_struct_field {
     ($struct:ident, $field:ident) => {
         const_assert_eq!(
@@ -52,8 +54,8 @@ macro_rules! check_struct_renamed_field {
     };
 }
 
-/// The same as `check_struct_renamed_field`, but for when both the struct
-/// and a field are renamed.
+/// The same as `check_struct_renamed_field`, but for when both the struct and
+/// a field are renamed.
 macro_rules! check_renamed_struct_renamed_field {
     ($to_struct:ident, $from_struct:ident, $to:ident, $from:ident) => {
         const_assert_eq!(
@@ -77,9 +79,9 @@ macro_rules! check_struct {
 
         // Check that we have all the fields.
         if false {
+            #[allow(unreachable_code)]
             let _test = $name {
-                // SAFETY: This code is guarded by `if false`.
-                $($field: unsafe { core::mem::zeroed() }),*
+                $($field: panic!()),*
             };
         }
 

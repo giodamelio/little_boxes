@@ -128,6 +128,33 @@ fn insert_order() {
 }
 
 #[test]
+fn shift_insert() {
+    let insert = [0, 4, 2, 12, 8, 7, 11, 5, 3, 17, 19, 22, 23];
+    let mut set = IndexSet::new();
+
+    for &elt in &insert {
+        set.shift_insert(0, elt);
+    }
+
+    assert_eq!(set.iter().count(), set.len());
+    assert_eq!(set.iter().count(), insert.len());
+    for (a, b) in insert.iter().rev().zip(set.iter()) {
+        assert_eq!(a, b);
+    }
+    for (i, v) in (0..insert.len()).zip(set.iter()) {
+        assert_eq!(set.get_index(i).unwrap(), v);
+    }
+
+    // "insert" that moves an existing entry
+    set.shift_insert(0, insert[0]);
+    assert_eq!(set.iter().count(), insert.len());
+    assert_eq!(insert[0], set[0]);
+    for (a, b) in insert[1..].iter().rev().zip(set.iter().skip(1)) {
+        assert_eq!(a, b);
+    }
+}
+
+#[test]
 fn replace() {
     let replace = [0, 4, 2, 12, 8, 7, 11, 5];
     let not_present = [1, 3, 6, 9, 10];
@@ -231,6 +258,18 @@ fn replace_order() {
     for (i, v) in (0..replace.len()).zip(set.iter()) {
         assert_eq!(set.get_index(i).unwrap(), v);
     }
+}
+
+#[test]
+fn replace_change() {
+    // Check pointers to make sure it really changes
+    let mut set = indexset!(vec![42]);
+    let old_ptr = set[0].as_ptr();
+    let new = set[0].clone();
+    let new_ptr = new.as_ptr();
+    assert_ne!(old_ptr, new_ptr);
+    let replaced = set.replace(new).unwrap();
+    assert_eq!(replaced.as_ptr(), old_ptr);
 }
 
 #[test]
@@ -542,4 +581,143 @@ fn iter_default() {
     }
     assert_default::<Iter<'static, Item>>();
     assert_default::<IntoIter<Item>>();
+}
+
+#[test]
+fn test_binary_search_by() {
+    // adapted from std's test for binary_search
+    let b: IndexSet<i32> = [].into();
+    assert_eq!(b.binary_search_by(|x| x.cmp(&5)), Err(0));
+
+    let b: IndexSet<i32> = [4].into();
+    assert_eq!(b.binary_search_by(|x| x.cmp(&3)), Err(0));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&4)), Ok(0));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&5)), Err(1));
+
+    let b: IndexSet<i32> = [1, 2, 4, 6, 8, 9].into();
+    assert_eq!(b.binary_search_by(|x| x.cmp(&5)), Err(3));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&6)), Ok(3));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&7)), Err(4));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&8)), Ok(4));
+
+    let b: IndexSet<i32> = [1, 2, 4, 5, 6, 8].into();
+    assert_eq!(b.binary_search_by(|x| x.cmp(&9)), Err(6));
+
+    let b: IndexSet<i32> = [1, 2, 4, 6, 7, 8, 9].into();
+    assert_eq!(b.binary_search_by(|x| x.cmp(&6)), Ok(3));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&5)), Err(3));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&8)), Ok(5));
+
+    let b: IndexSet<i32> = [1, 2, 4, 5, 6, 8, 9].into();
+    assert_eq!(b.binary_search_by(|x| x.cmp(&7)), Err(5));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&0)), Err(0));
+
+    let b: IndexSet<i32> = [1, 3, 3, 3, 7].into();
+    assert_eq!(b.binary_search_by(|x| x.cmp(&0)), Err(0));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&1)), Ok(0));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&2)), Err(1));
+    // diff from std as set merges the duplicate keys
+    assert!(match b.binary_search_by(|x| x.cmp(&3)) {
+        Ok(1..=2) => true,
+        _ => false,
+    });
+    assert!(match b.binary_search_by(|x| x.cmp(&3)) {
+        Ok(1..=2) => true,
+        _ => false,
+    });
+    assert_eq!(b.binary_search_by(|x| x.cmp(&4)), Err(2));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&5)), Err(2));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&6)), Err(2));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&7)), Ok(2));
+    assert_eq!(b.binary_search_by(|x| x.cmp(&8)), Err(3));
+}
+
+#[test]
+fn test_binary_search_by_key() {
+    // adapted from std's test for binary_search
+    let b: IndexSet<i32> = [].into();
+    assert_eq!(b.binary_search_by_key(&5, |&x| x), Err(0));
+
+    let b: IndexSet<i32> = [4].into();
+    assert_eq!(b.binary_search_by_key(&3, |&x| x), Err(0));
+    assert_eq!(b.binary_search_by_key(&4, |&x| x), Ok(0));
+    assert_eq!(b.binary_search_by_key(&5, |&x| x), Err(1));
+
+    let b: IndexSet<i32> = [1, 2, 4, 6, 8, 9].into();
+    assert_eq!(b.binary_search_by_key(&5, |&x| x), Err(3));
+    assert_eq!(b.binary_search_by_key(&6, |&x| x), Ok(3));
+    assert_eq!(b.binary_search_by_key(&7, |&x| x), Err(4));
+    assert_eq!(b.binary_search_by_key(&8, |&x| x), Ok(4));
+
+    let b: IndexSet<i32> = [1, 2, 4, 5, 6, 8].into();
+    assert_eq!(b.binary_search_by_key(&9, |&x| x), Err(6));
+
+    let b: IndexSet<i32> = [1, 2, 4, 6, 7, 8, 9].into();
+    assert_eq!(b.binary_search_by_key(&6, |&x| x), Ok(3));
+    assert_eq!(b.binary_search_by_key(&5, |&x| x), Err(3));
+    assert_eq!(b.binary_search_by_key(&8, |&x| x), Ok(5));
+
+    let b: IndexSet<i32> = [1, 2, 4, 5, 6, 8, 9].into();
+    assert_eq!(b.binary_search_by_key(&7, |&x| x), Err(5));
+    assert_eq!(b.binary_search_by_key(&0, |&x| x), Err(0));
+
+    let b: IndexSet<i32> = [1, 3, 3, 3, 7].into();
+    assert_eq!(b.binary_search_by_key(&0, |&x| x), Err(0));
+    assert_eq!(b.binary_search_by_key(&1, |&x| x), Ok(0));
+    assert_eq!(b.binary_search_by_key(&2, |&x| x), Err(1));
+    // diff from std as set merges the duplicate keys
+    assert!(match b.binary_search_by_key(&3, |&x| x) {
+        Ok(1..=2) => true,
+        _ => false,
+    });
+    assert!(match b.binary_search_by_key(&3, |&x| x) {
+        Ok(1..=2) => true,
+        _ => false,
+    });
+    assert_eq!(b.binary_search_by_key(&4, |&x| x), Err(2));
+    assert_eq!(b.binary_search_by_key(&5, |&x| x), Err(2));
+    assert_eq!(b.binary_search_by_key(&6, |&x| x), Err(2));
+    assert_eq!(b.binary_search_by_key(&7, |&x| x), Ok(2));
+    assert_eq!(b.binary_search_by_key(&8, |&x| x), Err(3));
+}
+
+#[test]
+fn test_partition_point() {
+    // adapted from std's test for partition_point
+    let b: IndexSet<i32> = [].into();
+    assert_eq!(b.partition_point(|&x| x < 5), 0);
+
+    let b: IndexSet<_> = [4].into();
+    assert_eq!(b.partition_point(|&x| x < 3), 0);
+    assert_eq!(b.partition_point(|&x| x < 4), 0);
+    assert_eq!(b.partition_point(|&x| x < 5), 1);
+
+    let b: IndexSet<_> = [1, 2, 4, 6, 8, 9].into();
+    assert_eq!(b.partition_point(|&x| x < 5), 3);
+    assert_eq!(b.partition_point(|&x| x < 6), 3);
+    assert_eq!(b.partition_point(|&x| x < 7), 4);
+    assert_eq!(b.partition_point(|&x| x < 8), 4);
+
+    let b: IndexSet<_> = [1, 2, 4, 5, 6, 8].into();
+    assert_eq!(b.partition_point(|&x| x < 9), 6);
+
+    let b: IndexSet<_> = [1, 2, 4, 6, 7, 8, 9].into();
+    assert_eq!(b.partition_point(|&x| x < 6), 3);
+    assert_eq!(b.partition_point(|&x| x < 5), 3);
+    assert_eq!(b.partition_point(|&x| x < 8), 5);
+
+    let b: IndexSet<_> = [1, 2, 4, 5, 6, 8, 9].into();
+    assert_eq!(b.partition_point(|&x| x < 7), 5);
+    assert_eq!(b.partition_point(|&x| x < 0), 0);
+
+    let b: IndexSet<_> = [1, 3, 3, 3, 7].into();
+    assert_eq!(b.partition_point(|&x| x < 0), 0);
+    assert_eq!(b.partition_point(|&x| x < 1), 0);
+    assert_eq!(b.partition_point(|&x| x < 2), 1);
+    assert_eq!(b.partition_point(|&x| x < 3), 1);
+    assert_eq!(b.partition_point(|&x| x < 4), 2); // diff from std as set merges the duplicate keys
+    assert_eq!(b.partition_point(|&x| x < 5), 2);
+    assert_eq!(b.partition_point(|&x| x < 6), 2);
+    assert_eq!(b.partition_point(|&x| x < 7), 2);
+    assert_eq!(b.partition_point(|&x| x < 8), 3);
 }

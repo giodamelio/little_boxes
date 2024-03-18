@@ -9,7 +9,7 @@ mod copy_file_range;
 #[cfg(not(any(target_os = "espidf", target_os = "redox")))]
 #[cfg(not(target_os = "haiku"))] // Haiku needs <https://github.com/rust-lang/rust/pull/112371>
 mod cwd;
-#[cfg(not(any(target_os = "espidf", target_os = "redox")))]
+#[cfg(all(feature = "alloc", not(any(target_os = "espidf", target_os = "redox"))))]
 mod dir;
 #[cfg(not(any(
     apple,
@@ -19,6 +19,7 @@ mod dir;
     target_os = "espidf",
     target_os = "haiku",
     target_os = "redox",
+    target_os = "vita",
 )))]
 mod fadvise;
 pub(crate) mod fcntl;
@@ -27,17 +28,17 @@ mod fcntl_apple;
 #[cfg(apple)]
 mod fcopyfile;
 pub(crate) mod fd;
-mod file_type;
-#[cfg(apple)]
+#[cfg(all(apple, feature = "alloc"))]
 mod getpath;
 #[cfg(not(target_os = "wasi"))] // WASI doesn't have get[gpu]id.
 mod id;
-#[cfg(not(target_os = "wasi"))]
+#[cfg(linux_kernel)]
 mod ioctl;
 #[cfg(not(any(
     target_os = "espidf",
     target_os = "haiku",
     target_os = "redox",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 mod makedev;
@@ -55,7 +56,12 @@ mod seek_from;
 mod sendfile;
 #[cfg(linux_kernel)]
 mod statx;
-#[cfg(not(any(target_os = "espidf", target_os = "redox", target_os = "wasi")))]
+#[cfg(not(any(
+    target_os = "espidf",
+    target_os = "redox",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
 mod sync;
 #[cfg(any(apple, linux_kernel))]
 mod xattr;
@@ -71,7 +77,7 @@ pub use copy_file_range::copy_file_range;
 #[cfg(not(any(target_os = "espidf", target_os = "redox")))]
 #[cfg(not(target_os = "haiku"))] // Haiku needs <https://github.com/rust-lang/rust/pull/112371>
 pub use cwd::*;
-#[cfg(not(any(target_os = "espidf", target_os = "redox")))]
+#[cfg(all(feature = "alloc", not(any(target_os = "espidf", target_os = "redox"))))]
 pub use dir::{Dir, DirEntry};
 #[cfg(not(any(
     apple,
@@ -81,30 +87,31 @@ pub use dir::{Dir, DirEntry};
     target_os = "espidf",
     target_os = "haiku",
     target_os = "redox",
+    target_os = "vita",
 )))]
-pub use fadvise::{fadvise, Advice};
+pub use fadvise::fadvise;
 pub use fcntl::*;
 #[cfg(apple)]
 pub use fcntl_apple::*;
 #[cfg(apple)]
 pub use fcopyfile::*;
 pub use fd::*;
-pub use file_type::FileType;
-#[cfg(apple)]
+#[cfg(all(apple, feature = "alloc"))]
 pub use getpath::getpath;
 #[cfg(not(target_os = "wasi"))]
 pub use id::*;
-#[cfg(not(target_os = "wasi"))]
+#[cfg(linux_kernel)]
 pub use ioctl::*;
 #[cfg(not(any(
     target_os = "espidf",
     target_os = "haiku",
     target_os = "redox",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 pub use makedev::*;
 #[cfg(any(linux_kernel, target_os = "freebsd"))]
-pub use memfd_create::{memfd_create, MemfdFlags};
+pub use memfd_create::memfd_create;
 #[cfg(linux_kernel)]
 #[cfg(feature = "fs")]
 pub use mount::*;
@@ -116,8 +123,13 @@ pub use seek_from::SeekFrom;
 #[cfg(target_os = "linux")]
 pub use sendfile::sendfile;
 #[cfg(linux_kernel)]
-pub use statx::{statx, Statx, StatxFlags, StatxTimestamp};
-#[cfg(not(any(target_os = "espidf", target_os = "redox", target_os = "wasi")))]
+pub use statx::statx;
+#[cfg(not(any(
+    target_os = "espidf",
+    target_os = "redox",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
 pub use sync::sync;
 #[cfg(any(apple, linux_kernel))]
 pub use xattr::*;
@@ -129,3 +141,38 @@ pub use std::os::unix::fs::{DirEntryExt, FileExt, FileTypeExt, MetadataExt, Open
 #[cfg(feature = "std")]
 #[cfg(all(wasi_ext, target_os = "wasi"))]
 pub use std::os::wasi::fs::{DirEntryExt, FileExt, FileTypeExt, MetadataExt, OpenOptionsExt};
+
+/// Extension trait for accessing timestamp fields of `Stat`.
+///
+/// Rustix's `Stat` type on some platforms has unsigned `st_mtime`,
+/// `st_atime`, and `st_ctime` fields. This is incorrect, as Unix defines
+/// these fields to be signed, with negative values representing dates before
+/// the Unix epoch. Until the next semver bump, these unsigned fields are
+/// deprecated, and this trait provides accessors which return their values
+/// as signed integers.
+#[cfg(all(unix, not(any(target_os = "aix", target_os = "nto"))))]
+pub trait StatExt {
+    /// Return the value of the `st_atime` field, casted to the correct type.
+    fn atime(&self) -> i64;
+    /// Return the value of the `st_mtime` field, casted to the correct type.
+    fn mtime(&self) -> i64;
+    /// Return the value of the `st_ctime` field, casted to the correct type.
+    fn ctime(&self) -> i64;
+}
+
+#[cfg(all(unix, not(any(target_os = "aix", target_os = "nto"))))]
+#[allow(deprecated)]
+impl StatExt for Stat {
+    #[inline]
+    fn atime(&self) -> i64 {
+        self.st_atime as i64
+    }
+    #[inline]
+    fn mtime(&self) -> i64 {
+        self.st_mtime as i64
+    }
+    #[inline]
+    fn ctime(&self) -> i64 {
+        self.st_ctime as i64
+    }
+}

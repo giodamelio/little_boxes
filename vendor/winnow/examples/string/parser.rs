@@ -11,11 +11,11 @@
 
 use winnow::ascii::multispace1;
 use winnow::combinator::alt;
-use winnow::combinator::fold_repeat;
+use winnow::combinator::repeat;
 use winnow::combinator::{delimited, preceded};
 use winnow::error::{FromExternalError, ParserError};
 use winnow::prelude::*;
-use winnow::token::{take_till1, take_while};
+use winnow::token::{take_till, take_while};
 
 /// Parse a string. Use a loop of `parse_fragment` and push all of the fragments
 /// into an output string.
@@ -23,12 +23,14 @@ pub fn parse_string<'a, E>(input: &mut &'a str) -> PResult<String, E>
 where
     E: ParserError<&'a str> + FromExternalError<&'a str, std::num::ParseIntError>,
 {
-    // fold_repeat is the equivalent of iterator::fold. It runs a parser in a loop,
+    // Repeat::fold is the equivalent of iterator::fold. It runs a parser in a loop,
     // and for each output value, calls a folding function on each output value.
-    let build_string = fold_repeat(
+    let build_string = repeat(
         0..,
         // Our parser function – parses a single string fragment
         parse_fragment,
+    )
+    .fold(
         // Our init value, an empty string
         String::new,
         // Our folding function. For each fragment, append the fragment to the
@@ -45,7 +47,7 @@ where
 
     // Finally, parse the string. Note that, if `build_string` could accept a raw
     // " character, the closing delimiter " would never match. When using
-    // `delimited` with a looping parser (like fold_repeat), be sure that the
+    // `delimited` with a looping parser (like Repeat::fold), be sure that the
     // loop won't accidentally match your closing delimiter!
     delimited('"', build_string, '"').parse_next(input)
 }
@@ -78,13 +80,13 @@ where
 
 /// Parse a non-empty block of text that doesn't include \ or "
 fn parse_literal<'a, E: ParserError<&'a str>>(input: &mut &'a str) -> PResult<&'a str, E> {
-    // `take_till1` parses a string of 0 or more characters that aren't one of the
+    // `take_till` parses a string of 0 or more characters that aren't one of the
     // given characters.
-    let not_quote_slash = take_till1(['"', '\\']);
+    let not_quote_slash = take_till(1.., ['"', '\\']);
 
     // `verify` runs a parser, then runs a verification function on the output of
     // the parser. The verification function accepts the output only if it
-    // returns true. In this case, we want to ensure that the output of take_till1
+    // returns true. In this case, we want to ensure that the output of take_till
     // is non-empty.
     not_quote_slash
         .verify(|s: &str| !s.is_empty())

@@ -99,8 +99,10 @@ fn clone_str() {
     check(s.par_chars());
     check(s.par_lines());
     check(s.par_split('\n'));
+    check(s.par_split_inclusive('\n'));
     check(s.par_split_terminator('\n'));
     check(s.par_split_whitespace());
+    check(s.par_split_ascii_whitespace());
 }
 
 #[test]
@@ -113,6 +115,7 @@ fn clone_vec() {
     check(v.par_rchunks_exact(42));
     check(v.par_windows(42));
     check(v.par_split(|x| x % 3 == 0));
+    check(v.par_split_inclusive(|x| x % 3 == 0));
     check(v.into_par_iter());
 }
 
@@ -125,6 +128,8 @@ fn clone_array() {
 #[test]
 fn clone_adaptors() {
     let v: Vec<_> = (0..1000).map(Some).collect();
+    check(v.par_iter().by_exponential_blocks());
+    check(v.par_iter().by_uniform_blocks(100));
     check(v.par_iter().chain(&v));
     check(v.par_iter().cloned());
     check(v.par_iter().copied());

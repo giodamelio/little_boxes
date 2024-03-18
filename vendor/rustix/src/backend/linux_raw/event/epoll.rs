@@ -1,8 +1,4 @@
-//! epoll support.
-//!
-//! This is an experiment, and it isn't yet clear whether epoll is the right
-//! level of abstraction at which to introduce safety. But it works fairly well
-//! in simple examples 🙂.
+//! Linux `epoll` support.
 //!
 //! # Examples
 //!
@@ -79,6 +75,7 @@ use crate::backend::c;
 use crate::backend::event::syscalls;
 use crate::fd::{AsFd, AsRawFd, OwnedFd};
 use crate::io;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::ffi::c_void;
@@ -92,6 +89,9 @@ bitflags! {
     pub struct CreateFlags: c::c_uint {
         /// `EPOLL_CLOEXEC`
         const CLOEXEC = linux_raw_sys::general::EPOLL_CLOEXEC;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -144,6 +144,9 @@ bitflags! {
 
         /// `EPOLLEXCLUSIVE`
         const EXCLUSIVE = linux_raw_sys::general::EPOLLEXCLUSIVE as u32;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -157,11 +160,11 @@ pub fn create(flags: CreateFlags) -> io::Result<OwnedFd> {
     syscalls::epoll_create(flags)
 }
 
-/// `epoll_ctl(self, EPOLL_CTL_ADD, data, event)`—Adds an element to an
-/// epoll object.
+/// `epoll_ctl(self, EPOLL_CTL_ADD, data, event)`—Adds an element to an epoll
+/// object.
 ///
-/// This registers interest in any of the events set in `events` occurring
-/// on the file descriptor associated with `data`.
+/// This registers interest in any of the events set in `events` occurring on
+/// the file descriptor associated with `data`.
 ///
 /// If [`delete`] is not called on the I/O source passed into this function
 /// before the I/O source is `close`d, then the `epoll` will act as if the I/O
@@ -191,8 +194,8 @@ pub fn add(
     }
 }
 
-/// `epoll_ctl(self, EPOLL_CTL_MOD, target, event)`—Modifies an element in
-/// a given epoll object.
+/// `epoll_ctl(self, EPOLL_CTL_MOD, target, event)`—Modifies an element in a
+/// given epoll object.
 ///
 /// This sets the events of interest with `target` to `events`.
 #[doc(alias = "epoll_ctl")]
@@ -218,8 +221,8 @@ pub fn modify(
     }
 }
 
-/// `epoll_ctl(self, EPOLL_CTL_DEL, target, NULL)`—Removes an element in
-/// a given epoll object.
+/// `epoll_ctl(self, EPOLL_CTL_DEL, target, NULL)`—Removes an element in a
+/// given epoll object.
 #[doc(alias = "epoll_ctl")]
 #[inline]
 pub fn delete(epoll: impl AsFd, source: impl AsFd) -> io::Result<()> {
@@ -236,6 +239,8 @@ pub fn delete(epoll: impl AsFd, source: impl AsFd) -> io::Result<()> {
 ///
 /// For each event of interest, an element is written to `events`. On
 /// success, this returns the number of written elements.
+#[cfg(feature = "alloc")]
+#[cfg_attr(doc_cfg, doc(cfg(feature = "alloc")))]
 #[inline]
 pub fn wait(epoll: impl AsFd, event_list: &mut EventVec, timeout: c::c_int) -> io::Result<()> {
     // SAFETY: We're calling `epoll_wait` via FFI and we know how it
@@ -257,8 +262,8 @@ pub fn wait(epoll: impl AsFd, event_list: &mut EventVec, timeout: c::c_int) -> i
 /// An iterator over the `Event`s in an `EventVec`.
 pub struct Iter<'a> {
     /// Use `Copied` to copy the struct, since `Event` is `packed` on some
-    /// platforms, and it's common for users to directly destructure it,
-    /// which would lead to errors about forming references to packed fields.
+    /// platforms, and it's common for users to directly destructure it, which
+    /// would lead to errors about forming references to packed fields.
     iter: core::iter::Copied<slice::Iter<'a, Event>>,
 }
 
@@ -282,8 +287,8 @@ pub struct Event {
     pub data: EventData,
 }
 
-/// Data assocated with an [`Event`]. This can either be a 64-bit integer value
-/// or a pointer which preserves pointer provenance.
+/// Data associated with an [`Event`]. This can either be a 64-bit integer
+/// value or a pointer which preserves pointer provenance.
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub union EventData {
@@ -317,8 +322,8 @@ impl EventData {
 
     /// Return the value as a `u64`.
     ///
-    /// If the stored value was a pointer, the pointer is zero-extended to
-    /// a `u64`.
+    /// If the stored value was a pointer, the pointer is zero-extended to a
+    /// `u64`.
     #[inline]
     pub fn u64(self) -> u64 {
         unsafe { self.as_u64 }
@@ -365,10 +370,12 @@ struct SixtyFourBitPointer {
 }
 
 /// A vector of `Event`s, plus context for interpreting them.
+#[cfg(feature = "alloc")]
 pub struct EventVec {
     events: Vec<Event>,
 }
 
+#[cfg(feature = "alloc")]
 impl EventVec {
     /// Constructs an `EventVec` from raw pointer, length, and capacity.
     ///
@@ -443,6 +450,7 @@ impl EventVec {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<'a> IntoIterator for &'a EventVec {
     type IntoIter = Iter<'a>;
     type Item = Event;

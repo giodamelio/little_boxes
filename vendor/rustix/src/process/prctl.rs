@@ -96,7 +96,7 @@ impl TryFrom<i32> for DumpableBehavior {
     }
 }
 
-/// Get the current state of the calling process's `dumpable` attribute.
+/// Get the current state of the calling process' `dumpable` attribute.
 ///
 /// # References
 ///  - [`prctl(PR_GET_DUMPABLE,...)`]
@@ -148,6 +148,9 @@ bitflags! {
         /// Generate a [`Signal::Bus`] signal on unaligned user access.
         #[doc(alias = "PR_UNALIGN_SIGBUS")]
         const SIGBUS = 2;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -407,8 +410,8 @@ const PR_SET_ENDIAN: c_int = 20;
 ///
 /// # Safety
 ///
-/// Please ensure the conditions necessary to safely call this function,
-/// as detailed in the references above.
+/// Please ensure the conditions necessary to safely call this function, as
+/// detailed in the references above.
 ///
 /// [`prctl(PR_SET_ENDIAN,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
@@ -646,8 +649,8 @@ pub enum VirtualMemoryMapAddress {
 ///
 /// # Safety
 ///
-/// Please ensure the conditions necessary to safely call this function,
-/// as detailed in the references above.
+/// Please ensure the conditions necessary to safely call this function, as
+/// detailed in the references above.
 ///
 /// [`prctl(PR_SET_MM,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
@@ -670,7 +673,7 @@ pub unsafe fn set_virtual_memory_map_address(
 #[inline]
 #[doc(alias = "PR_SET_MM")]
 #[doc(alias = "PR_SET_MM_EXE_FILE")]
-pub fn set_executable_file(fd: BorrowedFd) -> io::Result<()> {
+pub fn set_executable_file(fd: BorrowedFd<'_>) -> io::Result<()> {
     let fd = usize::try_from(fd.as_raw_fd()).map_err(|_r| io::Errno::RANGE)?;
     unsafe { prctl_3args(PR_SET_MM, PR_SET_MM_EXE_FILE as *mut _, fd as *mut _) }.map(|_r| ())
 }
@@ -682,8 +685,8 @@ pub fn set_executable_file(fd: BorrowedFd) -> io::Result<()> {
 ///
 /// # Safety
 ///
-/// Please ensure the conditions necessary to safely call this function,
-/// as detailed in the references above.
+/// Please ensure the conditions necessary to safely call this function, as
+/// detailed in the references above.
 ///
 /// [`prctl(PR_SET_MM,PR_SET_MM_AUXV,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
@@ -761,8 +764,8 @@ pub struct PrctlMmMap {
 ///
 /// # Safety
 ///
-/// Please ensure the conditions necessary to safely call this function,
-/// as detailed in the references above.
+/// Please ensure the conditions necessary to safely call this function, as
+/// detailed in the references above.
 ///
 /// [`prctl(PR_SET_MM,PR_SET_MM_MAP,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
@@ -957,9 +960,11 @@ bitflags! {
         const ENABLE = 1_u32 << 1;
         /// The speculation feature is disabled, mitigation is enabled.
         const DISABLE = 1_u32 << 2;
-        /// The speculation feature is disabled, mitigation is enabled, and it cannot be undone.
+        /// The speculation feature is disabled, mitigation is enabled, and it
+        /// cannot be undone.
         const FORCE_DISABLE = 1_u32 << 3;
-        /// The speculation feature is disabled, mitigation is enabled, and the state will be cleared on `execve`.
+        /// The speculation feature is disabled, mitigation is enabled, and the
+        /// state will be cleared on `execve`.
         const DISABLE_NOEXEC = 1_u32 << 4;
     }
 }
@@ -969,15 +974,18 @@ bitflags! {
     #[repr(transparent)]
     #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct SpeculationFeatureState: u32 {
-        /// Mitigation can be controlled per thread by `PR_SET_SPECULATION_CTRL`.
+        /// Mitigation can be controlled per thread by
+        /// `PR_SET_SPECULATION_CTRL`.
         const PRCTL = 1_u32 << 0;
         /// The speculation feature is enabled, mitigation is disabled.
         const ENABLE = 1_u32 << 1;
         /// The speculation feature is disabled, mitigation is enabled.
         const DISABLE = 1_u32 << 2;
-        /// The speculation feature is disabled, mitigation is enabled, and it cannot be undone.
+        /// The speculation feature is disabled, mitigation is enabled, and it
+        /// cannot be undone.
         const FORCE_DISABLE = 1_u32 << 3;
-        /// The speculation feature is disabled, mitigation is enabled, and the state will be cleared on `execve`.
+        /// The speculation feature is disabled, mitigation is enabled, and the
+        /// state will be cleared on `execve`.
         const DISABLE_NOEXEC = 1_u32 << 4;
     }
 }
@@ -1077,8 +1085,8 @@ const PR_PAC_SET_ENABLED_KEYS: c_int = 60;
 ///
 /// # Safety
 ///
-/// Please ensure the conditions necessary to safely call this function,
-/// as detailed in the references above.
+/// Please ensure the conditions necessary to safely call this function, as
+/// detailed in the references above.
 ///
 /// [`prctl(PR_PAC_SET_ENABLED_KEYS,...)`]: https://www.kernel.org/doc/html/v5.18/arm64/pointer-authentication.html
 #[inline]

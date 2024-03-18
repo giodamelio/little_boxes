@@ -405,6 +405,12 @@ impl PartialEq for Flag<'_> {
 
 impl PartialOrd for Flag<'_> {
     fn partial_cmp(&self, other: &Flag) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Flag<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
         use Flag::*;
 
         match (self, other) {
@@ -413,18 +419,12 @@ impl PartialOrd for Flag<'_> {
             | (Command(s1, _), Arg(s2, _))
             | (Arg(s1, _), Command(s2, _)) => {
                 if s1 == s2 {
-                    Some(Ordering::Equal)
+                    Ordering::Equal
                 } else {
-                    s1.partial_cmp(s2)
+                    s1.cmp(s2)
                 }
             }
         }
-    }
-}
-
-impl Ord for Flag<'_> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap()
     }
 }
 
@@ -704,13 +704,14 @@ fn assert_arg(arg: &Arg) {
         arg.get_id(),
     );
 
-    assert_eq!(
-        arg.get_action().takes_values(),
-        arg.is_takes_value_set(),
-        "Argument `{}`'s selected action {:?} contradicts `takes_value`",
-        arg.get_id(),
-        arg.get_action()
-    );
+    if arg.is_takes_value_set() {
+        assert!(
+            arg.get_action().takes_values(),
+            "Argument `{}`'s selected action {:?} contradicts `takes_value`",
+            arg.get_id(),
+            arg.get_action()
+        );
+    }
     if let Some(action_type_id) = arg.get_action().value_type_id() {
         assert_eq!(
             action_type_id,
@@ -746,8 +747,9 @@ fn assert_arg(arg: &Arg) {
         );
         assert!(
             arg.is_takes_value_set(),
-            "Argument '{}` is positional, it must take a value{}",
+            "Argument '{}` is positional and it must take a value but action is {:?}{}",
             arg.get_id(),
+            arg.get_action(),
             if arg.get_id() == Id::HELP {
                 " (`mut_arg` no longer works with implicit `--help`)"
             } else if arg.get_id() == Id::VERSION {
@@ -773,13 +775,6 @@ fn assert_arg(arg: &Arg) {
         }
     }
 
-    assert_eq!(
-        num_vals.takes_values(),
-        arg.is_takes_value_set(),
-        "Argument {}: mismatch between `num_args` ({}) and `takes_value`",
-        arg.get_id(),
-        num_vals,
-    );
     assert_eq!(
         num_vals.is_multiple(),
         arg.is_multiple_values_set(),

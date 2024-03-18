@@ -6,13 +6,17 @@
 #![allow(unsafe_code)]
 
 use crate::backend::c;
+#[cfg(target_os = "linux")]
+use crate::backend::net::write_sockaddr::encode_sockaddr_xdp;
 use crate::backend::net::write_sockaddr::{encode_sockaddr_v4, encode_sockaddr_v6};
 
 use crate::io::{self, IoSlice, IoSliceMut};
+#[cfg(target_os = "linux")]
+use crate::net::xdp::SocketAddrXdp;
 use crate::net::{RecvAncillaryBuffer, SendAncillaryBuffer, SocketAddrV4, SocketAddrV6};
 use crate::utils::as_ptr;
 
-use core::mem::{size_of, zeroed, MaybeUninit};
+use core::mem::{size_of, MaybeUninit};
 use core::ptr::null_mut;
 
 fn msg_iov_len(len: usize) -> c::size_t {
@@ -42,9 +46,7 @@ pub(crate) fn with_recv_msghdr<R>(
         msg_iovlen: msg_iov_len(iov.len()),
         msg_control: control.as_control_ptr().cast(),
         msg_controllen: msg_control_len(control.control_len()),
-
-        // Zero-initialize any padding bytes.
-        ..unsafe { zeroed() }
+        msg_flags: 0,
     };
 
     let res = f(&mut msghdr);
@@ -72,9 +74,7 @@ pub(crate) fn with_noaddr_msghdr<R>(
         msg_iovlen: msg_iov_len(iov.len()),
         msg_control: control.as_control_ptr().cast(),
         msg_controllen: msg_control_len(control.control_len()),
-
-        // Zero-initialize any padding bytes.
-        ..unsafe { zeroed() }
+        msg_flags: 0,
     })
 }
 
@@ -85,7 +85,7 @@ pub(crate) fn with_v4_msghdr<R>(
     control: &mut SendAncillaryBuffer<'_, '_, '_>,
     f: impl FnOnce(c::msghdr) -> R,
 ) -> R {
-    let encoded = unsafe { encode_sockaddr_v4(addr) };
+    let encoded = encode_sockaddr_v4(addr);
 
     f(c::msghdr {
         msg_name: as_ptr(&encoded) as _,
@@ -94,9 +94,7 @@ pub(crate) fn with_v4_msghdr<R>(
         msg_iovlen: msg_iov_len(iov.len()),
         msg_control: control.as_control_ptr().cast(),
         msg_controllen: msg_control_len(control.control_len()),
-
-        // Zero-initialize any padding bytes.
-        ..unsafe { zeroed() }
+        msg_flags: 0,
     })
 }
 
@@ -107,7 +105,7 @@ pub(crate) fn with_v6_msghdr<R>(
     control: &mut SendAncillaryBuffer<'_, '_, '_>,
     f: impl FnOnce(c::msghdr) -> R,
 ) -> R {
-    let encoded = unsafe { encode_sockaddr_v6(addr) };
+    let encoded = encode_sockaddr_v6(addr);
 
     f(c::msghdr {
         msg_name: as_ptr(&encoded) as _,
@@ -116,9 +114,7 @@ pub(crate) fn with_v6_msghdr<R>(
         msg_iovlen: msg_iov_len(iov.len()),
         msg_control: control.as_control_ptr().cast(),
         msg_controllen: msg_control_len(control.control_len()),
-
-        // Zero-initialize any padding bytes.
-        ..unsafe { zeroed() }
+        msg_flags: 0,
     })
 }
 
@@ -130,14 +126,46 @@ pub(crate) fn with_unix_msghdr<R>(
     f: impl FnOnce(c::msghdr) -> R,
 ) -> R {
     f(c::msghdr {
-        msg_name: as_ptr(addr) as _,
+        msg_name: as_ptr(&addr.unix) as _,
         msg_namelen: addr.addr_len() as _,
         msg_iov: iov.as_ptr() as _,
         msg_iovlen: msg_iov_len(iov.len()),
         msg_control: control.as_control_ptr().cast(),
         msg_controllen: msg_control_len(control.control_len()),
-
-        // Zero-initialize any padding bytes.
-        ..unsafe { zeroed() }
+        msg_flags: 0,
     })
+}
+
+/// Create a message header intended to send with an XDP address.
+#[cfg(target_os = "linux")]
+pub(crate) fn with_xdp_msghdr<R>(
+    addr: &SocketAddrXdp,
+    iov: &[IoSlice<'_>],
+    control: &mut SendAncillaryBuffer<'_, '_, '_>,
+    f: impl FnOnce(c::msghdr) -> R,
+) -> R {
+    let encoded = encode_sockaddr_xdp(addr);
+
+    f(c::msghdr {
+        msg_name: as_ptr(&encoded) as _,
+        msg_namelen: size_of::<SocketAddrXdp>() as _,
+        msg_iov: iov.as_ptr() as _,
+        msg_iovlen: msg_iov_len(iov.len()),
+        msg_control: control.as_control_ptr().cast(),
+        msg_controllen: msg_control_len(control.control_len()),
+        msg_flags: 0,
+    })
+}
+
+/// Create a zero-initialized message header struct value.
+pub(crate) fn zero_msghdr() -> c::msghdr {
+    c::msghdr {
+        msg_name: null_mut(),
+        msg_namelen: 0,
+        msg_iov: null_mut(),
+        msg_iovlen: 0,
+        msg_control: null_mut(),
+        msg_controllen: 0,
+        msg_flags: 0,
+    }
 }

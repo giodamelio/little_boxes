@@ -11,6 +11,8 @@ use crate::{InternalString, Item, KeyMut, RawString, Table, Value};
 pub struct InlineTable {
     // `preamble` represents whitespaces in an empty table
     preamble: RawString,
+    // Whether to hide an empty table
+    pub(crate) implicit: bool,
     // prefix before `{` and suffix after `}`
     decor: Decor,
     pub(crate) span: Option<std::ops::Range<usize>>,
@@ -55,10 +57,10 @@ impl InlineTable {
         values
     }
 
-    pub(crate) fn append_values<'s, 'c>(
+    pub(crate) fn append_values<'s>(
         &'s self,
         parent: &[&'s Key],
-        values: &'c mut Vec<(Vec<&'s Key>, &'s Value)>,
+        values: &mut Vec<(Vec<&'s Key>, &'s Value)>,
     ) {
         for value in self.items.values() {
             let mut path = parent.to_vec();
@@ -133,6 +135,36 @@ impl InlineTable {
         }
     }
 
+    /// If a table has no key/value pairs and implicit, it will not be displayed.
+    ///
+    /// # Examples
+    ///
+    /// ```notrust
+    /// [target."x86_64/windows.json".dependencies]
+    /// ```
+    ///
+    /// In the document above, tables `target` and `target."x86_64/windows.json"` are implicit.
+    ///
+    /// ```
+    /// # #[cfg(feature = "parse")] {
+    /// # #[cfg(feature = "display")] {
+    /// use toml_edit::DocumentMut;
+    /// let mut doc = "[a]\n[a.b]\n".parse::<DocumentMut>().expect("invalid toml");
+    ///
+    /// doc["a"].as_table_mut().unwrap().set_implicit(true);
+    /// assert_eq!(doc.to_string(), "[a.b]\n");
+    /// # }
+    /// # }
+    /// ```
+    pub(crate) fn set_implicit(&mut self, implicit: bool) {
+        self.implicit = implicit;
+    }
+
+    /// If a table has no key/value pairs and implicit, it will not be displayed.
+    pub(crate) fn is_implicit(&self) -> bool {
+        self.implicit
+    }
+
     /// Change this table's dotted status
     pub fn set_dotted(&mut self, yes: bool) {
         self.dotted = yes;
@@ -153,14 +185,28 @@ impl InlineTable {
         &self.decor
     }
 
-    /// Returns the decor associated with a given key of the table.
-    pub fn key_decor_mut(&mut self, key: &str) -> Option<&mut Decor> {
-        self.items.get_mut(key).map(|kv| &mut kv.key.decor)
+    /// Returns an accessor to a key's formatting
+    pub fn key(&self, key: &str) -> Option<&'_ Key> {
+        self.items.get(key).map(|kv| &kv.key)
+    }
+
+    /// Returns an accessor to a key's formatting
+    pub fn key_mut(&mut self, key: &str) -> Option<KeyMut<'_>> {
+        self.items.get_mut(key).map(|kv| kv.key.as_mut())
     }
 
     /// Returns the decor associated with a given key of the table.
+    #[deprecated(since = "0.21.1", note = "Replaced with `key_mut`")]
+    pub fn key_decor_mut(&mut self, key: &str) -> Option<&mut Decor> {
+        #![allow(deprecated)]
+        self.items.get_mut(key).map(|kv| kv.key.leaf_decor_mut())
+    }
+
+    /// Returns the decor associated with a given key of the table.
+    #[deprecated(since = "0.21.1", note = "Replaced with `key_mut`")]
     pub fn key_decor(&self, key: &str) -> Option<&Decor> {
-        self.items.get(key).map(|kv| &kv.key.decor)
+        #![allow(deprecated)]
+        self.items.get(key).map(|kv| kv.key.leaf_decor())
     }
 
     /// Set whitespace after before element
@@ -383,9 +429,10 @@ impl InlineTable {
     }
 }
 
+#[cfg(feature = "display")]
 impl std::fmt::Display for InlineTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        crate::encode::Encode::encode(self, f, None, ("", ""))
+        crate::encode::encode_table(self, f, None, ("", ""))
     }
 }
 
@@ -436,13 +483,14 @@ impl<'s> IntoIterator for &'s InlineTable {
 }
 
 fn decorate_inline_table(table: &mut InlineTable) {
-    for (key_decor, value) in table
+    for (mut key, value) in table
         .items
         .iter_mut()
-        .filter(|&(_, ref kv)| kv.value.is_value())
-        .map(|(_, kv)| (&mut kv.key.decor, kv.value.as_value_mut().unwrap()))
+        .filter(|(_, kv)| kv.value.is_value())
+        .map(|(_, kv)| (kv.key.as_mut(), kv.value.as_value_mut().unwrap()))
     {
-        key_decor.clear();
+        key.leaf_decor_mut().clear();
+        key.dotted_decor_mut().clear();
         value.decor_mut().clear();
     }
 }
@@ -530,10 +578,18 @@ impl TableLike for InlineTable {
         self.is_dotted()
     }
 
+    fn key(&self, key: &str) -> Option<&'_ Key> {
+        self.key(key)
+    }
+    fn key_mut(&mut self, key: &str) -> Option<KeyMut<'_>> {
+        self.key_mut(key)
+    }
     fn key_decor_mut(&mut self, key: &str) -> Option<&mut Decor> {
+        #![allow(deprecated)]
         self.key_decor_mut(key)
     }
     fn key_decor(&self, key: &str) -> Option<&Decor> {
+        #![allow(deprecated)]
         self.key_decor(key)
     }
 }

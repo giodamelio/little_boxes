@@ -14,7 +14,7 @@ pub trait DrawBox {
 
 // Find the count of visible chars in a String
 fn count_visible_chars(input: &str) -> usize {
-    strip_ansi_escapes::strip(input).unwrap().len()
+    strip_ansi_escapes::strip(input).len()
 }
 
 // A simple box around the content

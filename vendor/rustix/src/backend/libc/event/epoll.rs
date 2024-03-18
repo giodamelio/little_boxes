@@ -1,8 +1,4 @@
-//! epoll support.
-//!
-//! This is an experiment, and it isn't yet clear whether epoll is the right
-//! level of abstraction at which to introduce safety. But it works fairly well
-//! in simple examples 🙂.
+//! Linux `epoll` support.
 //!
 //! # Examples
 //!
@@ -74,10 +70,13 @@
 //! ```
 
 use crate::backend::c;
-use crate::backend::conv::{ret, ret_owned_fd, ret_u32};
+#[cfg(feature = "alloc")]
+use crate::backend::conv::ret_u32;
+use crate::backend::conv::{ret, ret_owned_fd};
 use crate::fd::{AsFd, AsRawFd, OwnedFd};
 use crate::io;
 use crate::utils::as_mut_ptr;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::ffi::c_void;
@@ -92,6 +91,9 @@ bitflags! {
     pub struct CreateFlags: u32 {
         /// `EPOLL_CLOEXEC`
         const CLOEXEC = bitcast!(c::EPOLL_CLOEXEC);
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -145,6 +147,9 @@ bitflags! {
         /// `EPOLLEXCLUSIVE`
         #[cfg(not(target_os = "android"))]
         const EXCLUSIVE = bitcast!(c::EPOLLEXCLUSIVE);
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -160,11 +165,11 @@ pub fn create(flags: CreateFlags) -> io::Result<OwnedFd> {
     unsafe { ret_owned_fd(c::epoll_create1(bitflags_bits!(flags))) }
 }
 
-/// `epoll_ctl(self, EPOLL_CTL_ADD, data, event)`—Adds an element to an
-/// epoll object.
+/// `epoll_ctl(self, EPOLL_CTL_ADD, data, event)`—Adds an element to an epoll
+/// object.
 ///
-/// This registers interest in any of the events set in `events` occurring
-/// on the file descriptor associated with `data`.
+/// This registers interest in any of the events set in `events` occurring on
+/// the file descriptor associated with `data`.
 ///
 /// If [`delete`] is not called on the I/O source passed into this function
 /// before the I/O source is `close`d, then the `epoll` will act as if the I/O
@@ -182,7 +187,7 @@ pub fn add(
     // SAFETY: We're calling `epoll_ctl` via FFI and we know how it
     // behaves. We use our own `Event` struct instead of libc's because
     // ours preserves pointer provenance instead of just using a `u64`,
-    // and we have tests elsehwere for layout equivalence.
+    // and we have tests elsewhere for layout equivalence.
     unsafe {
         let raw_fd = source.as_fd().as_raw_fd();
         ret(c::epoll_ctl(
@@ -192,14 +197,16 @@ pub fn add(
             as_mut_ptr(&mut Event {
                 flags: event_flags,
                 data,
+                #[cfg(target_os = "redox")]
+                _pad: 0,
             })
             .cast(),
         ))
     }
 }
 
-/// `epoll_ctl(self, EPOLL_CTL_MOD, target, event)`—Modifies an element in
-/// a given epoll object.
+/// `epoll_ctl(self, EPOLL_CTL_MOD, target, event)`—Modifies an element in a
+/// given epoll object.
 ///
 /// This sets the events of interest with `target` to `events`.
 #[doc(alias = "epoll_ctl")]
@@ -214,7 +221,7 @@ pub fn modify(
     // SAFETY: We're calling `epoll_ctl` via FFI and we know how it
     // behaves. We use our own `Event` struct instead of libc's because
     // ours preserves pointer provenance instead of just using a `u64`,
-    // and we have tests elsehwere for layout equivalence.
+    // and we have tests elsewhere for layout equivalence.
     unsafe {
         ret(c::epoll_ctl(
             epoll.as_fd().as_raw_fd(),
@@ -223,14 +230,16 @@ pub fn modify(
             as_mut_ptr(&mut Event {
                 flags: event_flags,
                 data,
+                #[cfg(target_os = "redox")]
+                _pad: 0,
             })
             .cast(),
         ))
     }
 }
 
-/// `epoll_ctl(self, EPOLL_CTL_DEL, target, NULL)`—Removes an element in
-/// a given epoll object.
+/// `epoll_ctl(self, EPOLL_CTL_DEL, target, NULL)`—Removes an element in a
+/// given epoll object.
 #[doc(alias = "epoll_ctl")]
 pub fn delete(epoll: impl AsFd, source: impl AsFd) -> io::Result<()> {
     // SAFETY: We're calling `epoll_ctl` via FFI and we know how it
@@ -251,6 +260,8 @@ pub fn delete(epoll: impl AsFd, source: impl AsFd) -> io::Result<()> {
 ///
 /// For each event of interest, an element is written to `events`. On
 /// success, this returns the number of written elements.
+#[cfg(feature = "alloc")]
+#[cfg_attr(doc_cfg, doc(cfg(feature = "alloc")))]
 pub fn wait(epoll: impl AsFd, event_list: &mut EventVec, timeout: c::c_int) -> io::Result<()> {
     // SAFETY: We're calling `epoll_wait` via FFI and we know how it
     // behaves.
@@ -271,8 +282,8 @@ pub fn wait(epoll: impl AsFd, event_list: &mut EventVec, timeout: c::c_int) -> i
 /// An iterator over the `Event`s in an `EventVec`.
 pub struct Iter<'a> {
     /// Use `Copied` to copy the struct, since `Event` is `packed` on some
-    /// platforms, and it's common for users to directly destructure it,
-    /// which would lead to errors about forming references to packed fields.
+    /// platforms, and it's common for users to directly destructure it, which
+    /// would lead to errors about forming references to packed fields.
     iter: core::iter::Copied<slice::Iter<'a, Event>>,
 }
 
@@ -288,13 +299,16 @@ impl<'a> Iterator for Iter<'a> {
 /// A record of an event that occurred.
 #[repr(C)]
 #[cfg_attr(
-    any(
-        all(
-            target_arch = "x86",
-            not(target_env = "musl"),
-            not(target_os = "android"),
-        ),
-        target_arch = "x86_64",
+    all(
+        linux_kernel,
+        any(
+            all(
+                target_arch = "x86",
+                not(target_env = "musl"),
+                not(target_os = "android"),
+            ),
+            target_arch = "x86_64",
+        )
     ),
     repr(packed)
 )]
@@ -304,10 +318,13 @@ pub struct Event {
     pub flags: EventFlags,
     /// User data.
     pub data: EventData,
+
+    #[cfg(target_os = "redox")]
+    _pad: u64,
 }
 
-/// Data assocated with an [`Event`]. This can either be a 64-bit integer value
-/// or a pointer which preserves pointer provenance.
+/// Data associated with an [`Event`]. This can either be a 64-bit integer
+/// value or a pointer which preserves pointer provenance.
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub union EventData {
@@ -341,8 +358,8 @@ impl EventData {
 
     /// Return the value as a `u64`.
     ///
-    /// If the stored value was a pointer, the pointer is zero-extended to
-    /// a `u64`.
+    /// If the stored value was a pointer, the pointer is zero-extended to a
+    /// `u64`.
     #[inline]
     pub fn u64(self) -> u64 {
         unsafe { self.as_u64 }
@@ -389,10 +406,12 @@ struct SixtyFourBitPointer {
 }
 
 /// A vector of `Event`s, plus context for interpreting them.
+#[cfg(feature = "alloc")]
 pub struct EventVec {
     events: Vec<Event>,
 }
 
+#[cfg(feature = "alloc")]
 impl EventVec {
     /// Constructs an `EventVec` from raw pointer, length, and capacity.
     ///
@@ -467,6 +486,7 @@ impl EventVec {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<'a> IntoIterator for &'a EventVec {
     type IntoIter = Iter<'a>;
     type Item = Event;

@@ -1,25 +1,30 @@
 //! libc syscalls supporting `rustix::process`.
 
-#[cfg(any(linux_kernel, target_os = "dragonfly", target_os = "fuchsia"))]
+#[cfg(any(freebsdlike, linux_kernel, target_os = "fuchsia"))]
 use super::types::RawCpuSet;
 use crate::backend::c;
+#[cfg(not(any(target_os = "wasi", target_os = "fuchsia")))]
+use crate::backend::conv::borrowed_fd;
 #[cfg(feature = "fs")]
 use crate::backend::conv::c_str;
-#[cfg(all(feature = "fs", not(target_os = "wasi")))]
+#[cfg(all(feature = "alloc", feature = "fs", not(target_os = "wasi")))]
 use crate::backend::conv::ret_discarded_char_ptr;
 #[cfg(not(any(
     target_os = "espidf",
     target_os = "fuchsia",
     target_os = "redox",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 use crate::backend::conv::ret_infallible;
+#[cfg(not(target_os = "wasi"))]
+use crate::backend::conv::ret_pid_t;
 #[cfg(linux_kernel)]
 use crate::backend::conv::ret_u32;
-#[cfg(not(target_os = "wasi"))]
-use crate::backend::conv::{borrowed_fd, ret_pid_t, ret_usize};
+#[cfg(all(feature = "alloc", not(target_os = "wasi")))]
+use crate::backend::conv::ret_usize;
 use crate::backend::conv::{ret, ret_c_int};
-#[cfg(not(target_os = "wasi"))]
+#[cfg(not(any(target_os = "wasi", target_os = "fuchsia")))]
 use crate::fd::BorrowedFd;
 #[cfg(target_os = "linux")]
 use crate::fd::{AsRawFd, OwnedFd, RawFd};
@@ -28,18 +33,28 @@ use crate::ffi::CStr;
 #[cfg(feature = "fs")]
 use crate::fs::Mode;
 use crate::io;
-#[cfg(not(any(target_os = "espidf", target_os = "fuchsia", target_os = "wasi")))]
+#[cfg(all(feature = "alloc", not(target_os = "wasi")))]
+use crate::process::Gid;
+#[cfg(not(target_os = "wasi"))]
+use crate::process::Pid;
+#[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
+use crate::process::Signal;
+#[cfg(not(any(
+    target_os = "espidf",
+    target_os = "fuchsia",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
 use crate::process::Uid;
 #[cfg(linux_kernel)]
 use crate::process::{Cpuid, MembarrierCommand, MembarrierQuery};
-#[cfg(not(target_os = "wasi"))]
-use crate::process::{Gid, Pid};
-#[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
-use crate::process::{RawPid, Signal, WaitOptions, WaitStatus};
+#[cfg(not(any(target_os = "espidf", target_os = "vita", target_os = "wasi")))]
+use crate::process::{RawPid, WaitOptions, WaitStatus};
 #[cfg(not(any(
     target_os = "espidf",
     target_os = "fuchsia",
     target_os = "redox",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 use crate::process::{Resource, Rlimit};
@@ -47,6 +62,7 @@ use crate::process::{Resource, Rlimit};
     target_os = "espidf",
     target_os = "redox",
     target_os = "openbsd",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 use crate::process::{WaitId, WaitidOptions, WaitidStatus};
@@ -55,6 +71,14 @@ use core::mem::MaybeUninit;
 use {
     super::super::conv::ret_owned_fd, crate::process::PidfdFlags, crate::process::PidfdGetfdFlags,
 };
+
+#[cfg(any(linux_kernel, target_os = "dragonfly"))]
+#[inline]
+pub(crate) fn sched_getcpu() -> usize {
+    let r = unsafe { libc::sched_getcpu() };
+    debug_assert!(r >= 0);
+    r as usize
+}
 
 #[cfg(feature = "fs")]
 #[cfg(not(target_os = "wasi"))]
@@ -73,7 +97,7 @@ pub(crate) fn chroot(path: &CStr) -> io::Result<()> {
     unsafe { ret(c::chroot(c_str(path))) }
 }
 
-#[cfg(feature = "fs")]
+#[cfg(all(feature = "alloc", feature = "fs"))]
 #[cfg(not(target_os = "wasi"))]
 pub(crate) fn getcwd(buf: &mut [MaybeUninit<u8>]) -> io::Result<()> {
     unsafe { ret_discarded_char_ptr(c::getcwd(buf.as_mut_ptr().cast(), buf.len())) }
@@ -165,7 +189,7 @@ pub(crate) fn getpgrp() -> Pid {
     }
 }
 
-#[cfg(any(linux_kernel, target_os = "dragonfly", target_os = "fuchsia"))]
+#[cfg(any(freebsdlike, linux_kernel, target_os = "fuchsia"))]
 #[inline]
 pub(crate) fn sched_getaffinity(pid: Option<Pid>, cpuset: &mut RawCpuSet) -> io::Result<()> {
     unsafe {
@@ -177,7 +201,7 @@ pub(crate) fn sched_getaffinity(pid: Option<Pid>, cpuset: &mut RawCpuSet) -> io:
     }
 }
 
-#[cfg(any(linux_kernel, target_os = "dragonfly", target_os = "fuchsia"))]
+#[cfg(any(freebsdlike, linux_kernel, target_os = "fuchsia"))]
 #[inline]
 pub(crate) fn sched_setaffinity(pid: Option<Pid>, cpuset: &RawCpuSet) -> io::Result<()> {
     unsafe {
@@ -203,7 +227,7 @@ pub(crate) fn umask(mask: Mode) -> Mode {
     unsafe { Mode::from_bits_retain(c::umask(mask.bits() as c::mode_t).into()) }
 }
 
-#[cfg(not(any(target_os = "fuchsia", target_os = "wasi")))]
+#[cfg(not(any(target_os = "fuchsia", target_os = "vita", target_os = "wasi")))]
 #[inline]
 pub(crate) fn nice(inc: i32) -> io::Result<i32> {
     libc_errno::set_errno(libc_errno::Errno(0));
@@ -215,7 +239,12 @@ pub(crate) fn nice(inc: i32) -> io::Result<i32> {
     }
 }
 
-#[cfg(not(any(target_os = "espidf", target_os = "fuchsia", target_os = "wasi")))]
+#[cfg(not(any(
+    target_os = "espidf",
+    target_os = "fuchsia",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
 #[inline]
 pub(crate) fn getpriority_user(uid: Uid) -> io::Result<i32> {
     libc_errno::set_errno(libc_errno::Errno(0));
@@ -227,7 +256,12 @@ pub(crate) fn getpriority_user(uid: Uid) -> io::Result<i32> {
     }
 }
 
-#[cfg(not(any(target_os = "espidf", target_os = "fuchsia", target_os = "wasi")))]
+#[cfg(not(any(
+    target_os = "espidf",
+    target_os = "fuchsia",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
 #[inline]
 pub(crate) fn getpriority_pgrp(pgid: Option<Pid>) -> io::Result<i32> {
     libc_errno::set_errno(libc_errno::Errno(0));
@@ -239,7 +273,12 @@ pub(crate) fn getpriority_pgrp(pgid: Option<Pid>) -> io::Result<i32> {
     }
 }
 
-#[cfg(not(any(target_os = "espidf", target_os = "fuchsia", target_os = "wasi")))]
+#[cfg(not(any(
+    target_os = "espidf",
+    target_os = "fuchsia",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
 #[inline]
 pub(crate) fn getpriority_process(pid: Option<Pid>) -> io::Result<i32> {
     libc_errno::set_errno(libc_errno::Errno(0));
@@ -251,13 +290,23 @@ pub(crate) fn getpriority_process(pid: Option<Pid>) -> io::Result<i32> {
     }
 }
 
-#[cfg(not(any(target_os = "espidf", target_os = "fuchsia", target_os = "wasi")))]
+#[cfg(not(any(
+    target_os = "espidf",
+    target_os = "fuchsia",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
 #[inline]
 pub(crate) fn setpriority_user(uid: Uid, priority: i32) -> io::Result<()> {
     unsafe { ret(c::setpriority(c::PRIO_USER, uid.as_raw() as _, priority)) }
 }
 
-#[cfg(not(any(target_os = "espidf", target_os = "fuchsia", target_os = "wasi")))]
+#[cfg(not(any(
+    target_os = "espidf",
+    target_os = "fuchsia",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
 #[inline]
 pub(crate) fn setpriority_pgrp(pgid: Option<Pid>, priority: i32) -> io::Result<()> {
     unsafe {
@@ -269,7 +318,12 @@ pub(crate) fn setpriority_pgrp(pgid: Option<Pid>, priority: i32) -> io::Result<(
     }
 }
 
-#[cfg(not(any(target_os = "espidf", target_os = "fuchsia", target_os = "wasi")))]
+#[cfg(not(any(
+    target_os = "espidf",
+    target_os = "fuchsia",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
 #[inline]
 pub(crate) fn setpriority_process(pid: Option<Pid>, priority: i32) -> io::Result<()> {
     unsafe {
@@ -285,6 +339,7 @@ pub(crate) fn setpriority_process(pid: Option<Pid>, priority: i32) -> io::Result
     target_os = "espidf",
     target_os = "fuchsia",
     target_os = "redox",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 #[inline]
@@ -300,6 +355,7 @@ pub(crate) fn getrlimit(limit: Resource) -> Rlimit {
     target_os = "espidf",
     target_os = "fuchsia",
     target_os = "redox",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 #[inline]
@@ -329,6 +385,7 @@ pub(crate) fn prlimit(pid: Option<Pid>, limit: Resource, new: Rlimit) -> io::Res
     target_os = "espidf",
     target_os = "fuchsia",
     target_os = "redox",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 fn rlimit_from_libc(lim: c::rlimit) -> Rlimit {
@@ -350,6 +407,7 @@ fn rlimit_from_libc(lim: c::rlimit) -> Rlimit {
     target_os = "espidf",
     target_os = "fuchsia",
     target_os = "redox",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 fn rlimit_to_libc(lim: Rlimit) -> io::Result<c::rlimit> {
@@ -365,13 +423,13 @@ fn rlimit_to_libc(lim: Rlimit) -> io::Result<c::rlimit> {
     Ok(c::rlimit { rlim_cur, rlim_max })
 }
 
-#[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
+#[cfg(not(any(target_os = "espidf", target_os = "vita", target_os = "wasi")))]
 #[inline]
 pub(crate) fn wait(waitopts: WaitOptions) -> io::Result<Option<(Pid, WaitStatus)>> {
     _waitpid(!0, waitopts)
 }
 
-#[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
+#[cfg(not(any(target_os = "espidf", target_os = "vita", target_os = "wasi")))]
 #[inline]
 pub(crate) fn waitpid(
     pid: Option<Pid>,
@@ -380,7 +438,13 @@ pub(crate) fn waitpid(
     _waitpid(Pid::as_raw(pid), waitopts)
 }
 
-#[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
+#[cfg(not(any(target_os = "espidf", target_os = "vita", target_os = "wasi")))]
+#[inline]
+pub(crate) fn waitpgid(pgid: Pid, waitopts: WaitOptions) -> io::Result<Option<(Pid, WaitStatus)>> {
+    _waitpid(-pgid.as_raw_nonzero().get(), waitopts)
+}
+
+#[cfg(not(any(target_os = "espidf", target_os = "vita", target_os = "wasi")))]
 #[inline]
 pub(crate) fn _waitpid(
     pid: RawPid,
@@ -397,6 +461,7 @@ pub(crate) fn _waitpid(
     target_os = "espidf",
     target_os = "redox",
     target_os = "openbsd",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 #[inline]
@@ -405,6 +470,7 @@ pub(crate) fn waitid(id: WaitId<'_>, options: WaitidOptions) -> io::Result<Optio
     match id {
         WaitId::All => _waitid_all(options),
         WaitId::Pid(pid) => _waitid_pid(pid, options),
+        WaitId::Pgid(pgid) => _waitid_pgid(pgid, options),
         #[cfg(target_os = "linux")]
         WaitId::PidFd(fd) => _waitid_pidfd(fd, options),
         #[cfg(not(target_os = "linux"))]
@@ -416,6 +482,7 @@ pub(crate) fn waitid(id: WaitId<'_>, options: WaitidOptions) -> io::Result<Optio
     target_os = "espidf",
     target_os = "redox",
     target_os = "openbsd",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 #[inline]
@@ -439,6 +506,7 @@ fn _waitid_all(options: WaitidOptions) -> io::Result<Option<WaitidStatus>> {
     target_os = "espidf",
     target_os = "redox",
     target_os = "openbsd",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 #[inline]
@@ -450,6 +518,30 @@ fn _waitid_pid(pid: Pid, options: WaitidOptions) -> io::Result<Option<WaitidStat
         ret(c::waitid(
             c::P_PID,
             Pid::as_raw(Some(pid)) as _,
+            status.as_mut_ptr(),
+            options.bits() as _,
+        ))?
+    };
+
+    Ok(unsafe { cvt_waitid_status(status) })
+}
+
+#[cfg(not(any(
+    target_os = "espidf",
+    target_os = "redox",
+    target_os = "openbsd",
+    target_os = "vita",
+    target_os = "wasi"
+)))]
+#[inline]
+fn _waitid_pgid(pgid: Option<Pid>, options: WaitidOptions) -> io::Result<Option<WaitidStatus>> {
+    // `waitid` can return successfully without initializing the struct (no
+    // children found when using `WNOHANG`)
+    let mut status = MaybeUninit::<c::siginfo_t>::zeroed();
+    unsafe {
+        ret(c::waitid(
+            c::P_PGID,
+            Pid::as_raw(pgid) as _,
             status.as_mut_ptr(),
             options.bits() as _,
         ))?
@@ -486,6 +578,7 @@ fn _waitid_pidfd(fd: BorrowedFd<'_>, options: WaitidOptions) -> io::Result<Optio
     target_os = "espidf",
     target_os = "openbsd",
     target_os = "redox",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 #[inline]
@@ -612,20 +705,9 @@ pub(crate) fn pidfd_getfd(
     }
 }
 
-#[cfg(not(target_os = "wasi"))]
+#[cfg(all(feature = "alloc", not(target_os = "wasi")))]
 pub(crate) fn getgroups(buf: &mut [Gid]) -> io::Result<usize> {
     let len = buf.len().try_into().map_err(|_| io::Errno::NOMEM)?;
 
     unsafe { ret_usize(c::getgroups(len, buf.as_mut_ptr().cast()) as isize) }
-}
-
-#[cfg(not(any(
-    target_os = "aix",
-    target_os = "espidf",
-    target_os = "redox",
-    target_os = "wasi"
-)))]
-#[inline]
-pub(crate) fn ioctl_tiocsctty(fd: BorrowedFd<'_>) -> io::Result<()> {
-    unsafe { ret(c::ioctl(borrowed_fd(fd), c::TIOCSCTTY as _, &0_u32)) }
 }

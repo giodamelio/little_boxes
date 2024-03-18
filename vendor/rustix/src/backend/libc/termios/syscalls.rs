@@ -9,7 +9,7 @@ use crate::backend::c;
 use crate::backend::conv::ret_pid_t;
 use crate::backend::conv::{borrowed_fd, ret};
 use crate::fd::BorrowedFd;
-#[cfg(feature = "procfs")]
+#[cfg(all(feature = "alloc", feature = "procfs"))]
 #[cfg(not(any(target_os = "fuchsia", target_os = "wasi")))]
 use crate::ffi::CStr;
 #[cfg(any(
@@ -33,19 +33,28 @@ pub(crate) fn tcgetattr(fd: BorrowedFd<'_>) -> io::Result<Termios> {
     // If we have `TCGETS2`, use it, so that we fill in the `c_ispeed` and
     // `c_ospeed` fields.
     #[cfg(linux_kernel)]
-    unsafe {
+    {
         use crate::termios::{ControlModes, InputModes, LocalModes, OutputModes, SpecialCodes};
-        use core::mem::zeroed;
+        use crate::utils::default_array;
 
-        let mut termios2 = MaybeUninit::<c::termios2>::uninit();
+        let termios2 = unsafe {
+            let mut termios2 = MaybeUninit::<c::termios2>::uninit();
 
-        ret(c::ioctl(
-            borrowed_fd(fd),
-            c::TCGETS2 as _,
-            termios2.as_mut_ptr(),
-        ))?;
+            // QEMU's `TCGETS2` doesn't currently set `input_speed` or
+            // `output_speed` on PowerPC, so zero out the fields ourselves.
+            #[cfg(any(target_arch = "powerpc", target_arch = "powerpc64"))]
+            {
+                termios2.write(core::mem::zeroed());
+            }
 
-        let termios2 = termios2.assume_init();
+            ret(c::ioctl(
+                borrowed_fd(fd),
+                c::TCGETS2 as _,
+                termios2.as_mut_ptr(),
+            ))?;
+
+            termios2.assume_init()
+        };
 
         // Convert from the Linux `termios2` to our `Termios`.
         let mut result = Termios {
@@ -54,10 +63,37 @@ pub(crate) fn tcgetattr(fd: BorrowedFd<'_>) -> io::Result<Termios> {
             control_modes: ControlModes::from_bits_retain(termios2.c_cflag),
             local_modes: LocalModes::from_bits_retain(termios2.c_lflag),
             line_discipline: termios2.c_line,
-            special_codes: SpecialCodes(zeroed()),
+            special_codes: SpecialCodes(default_array()),
             input_speed: termios2.c_ispeed,
             output_speed: termios2.c_ospeed,
         };
+
+        // QEMU's `TCGETS2` doesn't currently set `input_speed` or
+        // `output_speed` on PowerPC, so set them manually if we can.
+        #[cfg(any(target_arch = "powerpc", target_arch = "powerpc64"))]
+        {
+            use crate::termios::speed;
+
+            if result.output_speed == 0 && (termios2.c_cflag & c::CBAUD) != c::BOTHER {
+                if let Some(output_speed) = speed::decode(termios2.c_cflag & c::CBAUD) {
+                    result.output_speed = output_speed;
+                }
+            }
+            if result.input_speed == 0
+                && ((termios2.c_cflag & c::CIBAUD) >> c::IBSHIFT) != c::BOTHER
+            {
+                // For input speeds, `B0` is special-cased to mean the input
+                // speed is the same as the output speed.
+                if ((termios2.c_cflag & c::CIBAUD) >> c::IBSHIFT) == c::B0 {
+                    result.input_speed = result.output_speed;
+                } else if let Some(input_speed) =
+                    speed::decode((termios2.c_cflag & c::CIBAUD) >> c::IBSHIFT)
+                {
+                    result.input_speed = input_speed;
+                }
+            }
+        }
+
         result.special_codes.0[..termios2.c_cc.len()].copy_from_slice(&termios2.c_cc);
 
         Ok(result)
@@ -79,6 +115,15 @@ pub(crate) fn tcgetattr(fd: BorrowedFd<'_>) -> io::Result<Termios> {
 pub(crate) fn tcgetpgrp(fd: BorrowedFd<'_>) -> io::Result<Pid> {
     unsafe {
         let pid = ret_pid_t(c::tcgetpgrp(borrowed_fd(fd)))?;
+
+        // This doesn't appear to be documented, but on Linux, it appears
+        // `tcsetpgrp` can succceed and set the pid to 0 if we pass it a
+        // pseudo-terminal device fd. For now, translate it into `OPNOTSUPP`.
+        #[cfg(linux_kernel)]
+        if pid == 0 {
+            return Err(io::Errno::OPNOTSUPP);
+        }
+
         Ok(Pid::from_raw_unchecked(pid))
     }
 }
@@ -90,16 +135,16 @@ pub(crate) fn tcsetpgrp(fd: BorrowedFd<'_>, pid: Pid) -> io::Result<()> {
 
 #[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
 pub(crate) fn tcsetattr(
-    fd: BorrowedFd,
+    fd: BorrowedFd<'_>,
     optional_actions: OptionalActions,
     termios: &Termios,
 ) -> io::Result<()> {
     // If we have `TCSETS2`, use it, so that we use the `c_ispeed` and
     // `c_ospeed` fields.
     #[cfg(linux_kernel)]
-    unsafe {
+    {
         use crate::termios::speed;
-        use core::mem::zeroed;
+        use crate::utils::default_array;
         use linux_raw_sys::general::{termios2, BOTHER, CBAUD, IBSHIFT};
 
         #[cfg(not(any(target_arch = "sparc", target_arch = "sparc64")))]
@@ -108,12 +153,12 @@ pub(crate) fn tcsetattr(
         // linux-raw-sys' ioctl-generation script for sparc isn't working yet,
         // so as a temporary workaround, declare these manually.
         #[cfg(any(target_arch = "sparc", target_arch = "sparc64"))]
-        const TCSETS: u32 = 0x80245409;
+        const TCSETS: u32 = 0x8024_5409;
         #[cfg(any(target_arch = "sparc", target_arch = "sparc64"))]
-        const TCSETS2: u32 = 0x802c540d;
+        const TCSETS2: u32 = 0x802c_540d;
 
-        // Translate from `optional_actions` into an ioctl request code. On MIPS,
-        // `optional_actions` already has `TCGETS` added to it.
+        // Translate from `optional_actions` into an ioctl request code. On
+        // MIPS, `optional_actions` already has `TCGETS` added to it.
         let request = TCSETS2
             + if cfg!(any(
                 target_arch = "mips",
@@ -134,7 +179,7 @@ pub(crate) fn tcsetattr(
             c_cflag: termios.control_modes.bits(),
             c_lflag: termios.local_modes.bits(),
             c_line: termios.line_discipline,
-            c_cc: zeroed(),
+            c_cc: default_array(),
             c_ispeed: input_speed,
             c_ospeed: output_speed,
         };
@@ -149,7 +194,7 @@ pub(crate) fn tcsetattr(
             .c_cc
             .copy_from_slice(&termios.special_codes.0[..nccs]);
 
-        ret(c::ioctl(borrowed_fd(fd), request as _, &termios2))
+        unsafe { ret(c::ioctl(borrowed_fd(fd), request as _, &termios2)) }
     }
 
     #[cfg(not(linux_kernel))]
@@ -163,27 +208,27 @@ pub(crate) fn tcsetattr(
 }
 
 #[cfg(not(target_os = "wasi"))]
-pub(crate) fn tcsendbreak(fd: BorrowedFd) -> io::Result<()> {
+pub(crate) fn tcsendbreak(fd: BorrowedFd<'_>) -> io::Result<()> {
     unsafe { ret(c::tcsendbreak(borrowed_fd(fd), 0)) }
 }
 
 #[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
-pub(crate) fn tcdrain(fd: BorrowedFd) -> io::Result<()> {
+pub(crate) fn tcdrain(fd: BorrowedFd<'_>) -> io::Result<()> {
     unsafe { ret(c::tcdrain(borrowed_fd(fd))) }
 }
 
 #[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
-pub(crate) fn tcflush(fd: BorrowedFd, queue_selector: QueueSelector) -> io::Result<()> {
+pub(crate) fn tcflush(fd: BorrowedFd<'_>, queue_selector: QueueSelector) -> io::Result<()> {
     unsafe { ret(c::tcflush(borrowed_fd(fd), queue_selector as _)) }
 }
 
 #[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
-pub(crate) fn tcflow(fd: BorrowedFd, action: Action) -> io::Result<()> {
+pub(crate) fn tcflow(fd: BorrowedFd<'_>, action: Action) -> io::Result<()> {
     unsafe { ret(c::tcflow(borrowed_fd(fd), action as _)) }
 }
 
 #[cfg(not(target_os = "wasi"))]
-pub(crate) fn tcgetsid(fd: BorrowedFd) -> io::Result<Pid> {
+pub(crate) fn tcgetsid(fd: BorrowedFd<'_>) -> io::Result<Pid> {
     unsafe {
         let pid = ret_pid_t(c::tcgetsid(borrowed_fd(fd)))?;
         Ok(Pid::from_raw_unchecked(pid))
@@ -191,12 +236,12 @@ pub(crate) fn tcgetsid(fd: BorrowedFd) -> io::Result<Pid> {
 }
 
 #[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
-pub(crate) fn tcsetwinsize(fd: BorrowedFd, winsize: Winsize) -> io::Result<()> {
+pub(crate) fn tcsetwinsize(fd: BorrowedFd<'_>, winsize: Winsize) -> io::Result<()> {
     unsafe { ret(c::ioctl(borrowed_fd(fd), c::TIOCSWINSZ, &winsize)) }
 }
 
 #[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
-pub(crate) fn tcgetwinsize(fd: BorrowedFd) -> io::Result<Winsize> {
+pub(crate) fn tcgetwinsize(fd: BorrowedFd<'_>) -> io::Result<Winsize> {
     unsafe {
         let mut buf = MaybeUninit::<Winsize>::uninit();
         ret(c::ioctl(
@@ -206,26 +251,6 @@ pub(crate) fn tcgetwinsize(fd: BorrowedFd) -> io::Result<Winsize> {
         ))?;
         Ok(buf.assume_init())
     }
-}
-
-#[cfg(not(any(
-    target_os = "espidf",
-    target_os = "haiku",
-    target_os = "redox",
-    target_os = "wasi"
-)))]
-pub(crate) fn ioctl_tiocexcl(fd: BorrowedFd) -> io::Result<()> {
-    unsafe { ret(c::ioctl(borrowed_fd(fd), c::TIOCEXCL as _)) }
-}
-
-#[cfg(not(any(
-    target_os = "espidf",
-    target_os = "haiku",
-    target_os = "redox",
-    target_os = "wasi"
-)))]
-pub(crate) fn ioctl_tiocnxcl(fd: BorrowedFd) -> io::Result<()> {
-    unsafe { ret(c::ioctl(borrowed_fd(fd), c::TIOCNXCL as _)) }
 }
 
 #[cfg(not(any(target_os = "espidf", target_os = "nto", target_os = "wasi")))]
@@ -359,13 +384,13 @@ pub(crate) fn cfmakeraw(termios: &mut Termios) {
 pub(crate) fn isatty(fd: BorrowedFd<'_>) -> bool {
     // Use the return value of `isatty` alone. We don't check `errno` because
     // we return `bool` rather than `io::Result<bool>`, because we assume
-    // `BorrrowedFd` protects us from `EBADF`, and any other reasonably
+    // `BorrowedFd` protects us from `EBADF`, and any other reasonably
     // anticipated `errno` value would end up interpreted as “assume it's not a
     // terminal” anyway.
     unsafe { c::isatty(borrowed_fd(fd)) != 0 }
 }
 
-#[cfg(feature = "procfs")]
+#[cfg(all(feature = "alloc", feature = "procfs"))]
 #[cfg(not(any(target_os = "fuchsia", target_os = "wasi")))]
 pub(crate) fn ttyname(dirfd: BorrowedFd<'_>, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
     unsafe {

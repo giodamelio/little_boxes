@@ -7,6 +7,8 @@
 //! - [Tutorial][_tutorial::chapter_0]
 //! - [Special Topics][_topic]
 //! - [Discussions](https://github.com/winnow-rs/winnow/discussions)
+//! - [CHANGELOG](https://github.com/winnow-rs/winnow/blob/v0.6.5/CHANGELOG.md) (includes major version migration
+//!   guides)
 //!
 //! ## Aspirations
 //!
@@ -49,6 +51,7 @@
 #![cfg_attr(docsrs, feature(extended_key_value_attributes))]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
+#![warn(clippy::std_instead_of_core)]
 // BEGIN - Embark standard lints v6 for Rust 1.55+
 // do not change or add/remove here, but one can add exceptions after this section
 // for more info see: <https://github.com/EmbarkStudios/rust-ecosystem/issues/59>
@@ -175,6 +178,7 @@ pub(crate) mod lib {
     #[cfg(feature = "std")]
     /// internal std exports for `no_std` compatibility
     pub mod std {
+        #![allow(clippy::std_instead_of_core)]
         #[doc(hidden)]
         pub use std::{
             alloc, borrow, boxed, cmp, collections, convert, fmt, hash, iter, mem, ops, option,
@@ -203,7 +207,6 @@ pub mod ascii;
 pub mod binary;
 pub mod combinator;
 pub mod token;
-pub mod trace;
 
 #[cfg(feature = "unstable-doc")]
 pub mod _topic;
@@ -236,6 +239,8 @@ pub mod prelude {
     pub use crate::IResult;
     pub use crate::PResult;
     pub use crate::Parser;
+    #[cfg(feature = "unstable-recover")]
+    pub use crate::RecoverableParser as _;
 }
 
 pub use error::IResult;

@@ -2,7 +2,7 @@ use std::fmt;
 use std::iter::FromIterator;
 
 use snapbox::assert_eq;
-use toml_edit::{array, table, value, Document, Item, Key, Table, Value};
+use toml_edit::{array, table, value, DocumentMut, Item, Key, Table, Value};
 
 macro_rules! parse_key {
     ($s:expr) => {{
@@ -33,11 +33,11 @@ impl<'a> fmt::Debug for PrettyString<'a> {
 }
 
 struct Test {
-    doc: Document,
+    doc: DocumentMut,
 }
 
 fn given(input: &str) -> Test {
-    let doc = input.parse::<Document>();
+    let doc = input.parse::<DocumentMut>();
     assert!(doc.is_ok());
     Test { doc: doc.unwrap() }
 }
@@ -125,7 +125,7 @@ fn test_inserted_leaf_table_goes_after_last_sibling() {
 fn test_inserting_tables_from_different_parsed_docs() {
     given("[a]")
         .running(|root| {
-            let other = "[b]".parse::<Document>().unwrap();
+            let other = "[b]".parse::<DocumentMut>().unwrap();
             root["b"] = other["b"].clone();
         })
         .produces_display("[a]\n[b]\n");
@@ -852,4 +852,11 @@ fn test_insert_dotted_into_implicit_table() {
 src.git = "https://github.com/nixos/nixpkgs"
 "#,
         );
+}
+
+#[test]
+fn sorting_with_references() {
+    let values = vec!["foo", "qux", "bar"];
+    let mut array = toml_edit::Array::from_iter(values);
+    array.sort_by(|lhs, rhs| lhs.as_str().cmp(&rhs.as_str()));
 }

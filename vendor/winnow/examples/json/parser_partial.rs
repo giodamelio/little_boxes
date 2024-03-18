@@ -7,7 +7,7 @@ use winnow::{
     combinator::alt,
     combinator::{cut_err, rest},
     combinator::{delimited, preceded, separated_pair, terminated},
-    combinator::{fold_repeat, separated0},
+    combinator::{repeat, separated},
     error::{AddContext, ParserError},
     stream::Partial,
     token::{any, none_of, take, take_while},
@@ -53,7 +53,7 @@ fn json_value<'i, E: ParserError<Stream<'i>> + AddContext<Stream<'i>, &'static s
     .parse_next(input)
 }
 
-/// `tag(string)` generates a parser that recognizes the argument string.
+/// `literal(string)` generates a parser that recognizes the argument string.
 ///
 /// This also shows returning a sub-slice of the original input
 fn null<'i, E: ParserError<Stream<'i>>>(input: &mut Stream<'i>) -> PResult<&'i str, E> {
@@ -88,7 +88,7 @@ fn string<'i, E: ParserError<Stream<'i>> + AddContext<Stream<'i>, &'static str>>
         // right branch (since we found the `"` character) but encountered an error when
         // parsing the string
         cut_err(terminated(
-            fold_repeat(0.., character, String::new, |mut string, c| {
+            repeat(0.., character).fold(String::new, |mut string, c| {
                 string.push(c);
                 string
             }),
@@ -154,7 +154,7 @@ fn u16_hex<'i, E: ParserError<Stream<'i>>>(input: &mut Stream<'i>) -> PResult<u1
         .parse_next(input)
 }
 
-/// Some combinators, like `separated0` or `many0`, will call a parser repeatedly,
+/// Some combinators, like `separated` or `repeat`, will call a parser repeatedly,
 /// accumulating results in a `Vec`, until it encounters an error.
 /// If you want more control on the parser application, check out the `iterator`
 /// combinator (cf `examples/iterator.rs`)
@@ -163,7 +163,10 @@ fn array<'i, E: ParserError<Stream<'i>> + AddContext<Stream<'i>, &'static str>>(
 ) -> PResult<Vec<JsonValue>, E> {
     preceded(
         ('[', ws),
-        cut_err(terminated(separated0(json_value, (ws, ',', ws)), (ws, ']'))),
+        cut_err(terminated(
+            separated(0.., json_value, (ws, ',', ws)),
+            (ws, ']'),
+        )),
     )
     .context("array")
     .parse_next(input)
@@ -174,7 +177,10 @@ fn object<'i, E: ParserError<Stream<'i>> + AddContext<Stream<'i>, &'static str>>
 ) -> PResult<HashMap<String, JsonValue>, E> {
     preceded(
         ('{', ws),
-        cut_err(terminated(separated0(key_value, (ws, ',', ws)), (ws, '}'))),
+        cut_err(terminated(
+            separated(0.., key_value, (ws, ',', ws)),
+            (ws, '}'),
+        )),
     )
     .context("object")
     .parse_next(input)

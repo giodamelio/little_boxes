@@ -9,9 +9,11 @@
 //! OS-specific socket address representations in memory.
 #![allow(unsafe_code)]
 
+#[cfg(target_os = "linux")]
+use crate::net::xdp::SocketAddrXdp;
 #[cfg(unix)]
 use crate::net::SocketAddrUnix;
-use crate::net::{AddressFamily, SocketAddrV4, SocketAddrV6};
+use crate::net::{AddressFamily, SocketAddr, SocketAddrV4, SocketAddrV6};
 use crate::{backend, io};
 #[cfg(feature = "std")]
 use core::fmt;
@@ -30,6 +32,19 @@ pub enum SocketAddrAny {
     /// `struct sockaddr_un`
     #[cfg(unix)]
     Unix(SocketAddrUnix),
+    /// `struct sockaddr_xdp`
+    #[cfg(target_os = "linux")]
+    Xdp(SocketAddrXdp),
+}
+
+impl From<SocketAddr> for SocketAddrAny {
+    #[inline]
+    fn from(from: SocketAddr) -> Self {
+        match from {
+            SocketAddr::V4(v4) => Self::V4(v4),
+            SocketAddr::V6(v6) => Self::V6(v6),
+        }
+    }
 }
 
 impl From<SocketAddrV4> for SocketAddrAny {
@@ -63,6 +78,8 @@ impl SocketAddrAny {
             Self::V6(_) => AddressFamily::INET6,
             #[cfg(unix)]
             Self::Unix(_) => AddressFamily::UNIX,
+            #[cfg(target_os = "linux")]
+            Self::Xdp(_) => AddressFamily::XDP,
         }
     }
 
@@ -98,6 +115,8 @@ impl fmt::Debug for SocketAddrAny {
             Self::V6(v6) => v6.fmt(fmt),
             #[cfg(unix)]
             Self::Unix(unix) => unix.fmt(fmt),
+            #[cfg(target_os = "linux")]
+            Self::Xdp(xdp) => xdp.fmt(fmt),
         }
     }
 }

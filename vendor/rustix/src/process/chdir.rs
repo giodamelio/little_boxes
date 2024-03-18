@@ -1,11 +1,13 @@
 #[cfg(not(target_os = "fuchsia"))]
 use crate::backend::fd::AsFd;
+#[cfg(feature = "fs")]
+use crate::path;
 #[cfg(any(feature = "fs", not(target_os = "fuchsia")))]
 use crate::{backend, io};
-#[cfg(feature = "fs")]
+#[cfg(all(feature = "alloc", feature = "fs"))]
 use {
     crate::ffi::{CStr, CString},
-    crate::path::{self, SMALL_PATH_BUFFER_SIZE},
+    crate::path::SMALL_PATH_BUFFER_SIZE,
     alloc::vec::Vec,
 };
 
@@ -48,7 +50,7 @@ pub fn fchdir<Fd: AsFd>(fd: Fd) -> io::Result<()> {
 ///
 /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/getcwd.html
 /// [Linux]: https://man7.org/linux/man-pages/man3/getcwd.3.html
-#[cfg(feature = "fs")]
+#[cfg(all(feature = "alloc", feature = "fs"))]
 #[cfg(not(target_os = "wasi"))]
 #[cfg_attr(doc_cfg, doc(cfg(feature = "fs")))]
 #[inline]
@@ -56,7 +58,7 @@ pub fn getcwd<B: Into<Vec<u8>>>(reuse: B) -> io::Result<CString> {
     _getcwd(reuse.into())
 }
 
-#[cfg(feature = "fs")]
+#[cfg(all(feature = "alloc", feature = "fs"))]
 #[allow(unsafe_code)]
 fn _getcwd(mut buffer: Vec<u8>) -> io::Result<CString> {
     buffer.clear();
@@ -65,15 +67,18 @@ fn _getcwd(mut buffer: Vec<u8>) -> io::Result<CString> {
     loop {
         match backend::process::syscalls::getcwd(buffer.spare_capacity_mut()) {
             Err(io::Errno::RANGE) => {
-                buffer.reserve(buffer.capacity() + 1); // use `Vec` reallocation strategy to grow capacity exponentially
+                // Use `Vec` reallocation strategy to grow capacity
+                // exponentially.
+                buffer.reserve(buffer.capacity() + 1);
             }
             Ok(_) => {
                 // SAFETY:
                 // - "These functions return a null-terminated string"
-                // - [POSIX definition 3.375: String]: "A contiguous sequence of bytes
-                //   terminated by and including the first null byte."
+                // - [POSIX definition 3.375: String]: "A contiguous sequence
+                //   of bytes terminated by and including the first null byte."
                 //
-                // Thus, there will be a single NUL byte at the end of the string.
+                // Thus, there will be a single NUL byte at the end of the
+                // string.
                 //
                 // [POSIX definition 3.375: String]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_375
                 unsafe {

@@ -12,8 +12,8 @@ use std::eprintln;
 use std::io::stderr;
 
 use rayon::prelude::*;
+use snapbox::data::{DataFormat, NormalizeNewlines, NormalizePaths};
 use snapbox::path::FileType;
-use snapbox::{DataFormat, NormalizeNewlines, NormalizePaths};
 
 #[derive(Debug)]
 pub(crate) struct Runner {
@@ -302,6 +302,7 @@ impl Case {
         outputs
     }
 
+    #[allow(clippy::result_large_err)]
     pub(crate) fn run_step(
         &self,
         step: &mut crate::schema::Step,
@@ -440,10 +441,12 @@ impl Case {
         }
 
         if let Some(expected_content) = expected_content {
-            stream.content = stream.content.normalize(snapbox::NormalizeMatches::new(
-                substitutions,
-                expected_content,
-            ));
+            stream.content = stream
+                .content
+                .normalize(snapbox::data::NormalizeMatches::new(
+                    substitutions,
+                    expected_content,
+                ));
 
             if stream.content != *expected_content {
                 stream.status = StreamStatus::Expected(expected_content.clone());
@@ -479,7 +482,7 @@ impl Case {
                 }
             };
             let stream_path = root.join(file_name);
-            stream.content.write_to(&stream_path).map_err(|e| {
+            stream.content.write_to_path(&stream_path).map_err(|e| {
                 let mut stream = stream.clone();
                 if stream.is_ok() {
                     stream.status = StreamStatus::Failure(e);
@@ -733,7 +736,7 @@ struct Stream {
 
 impl Stream {
     fn make_text(mut self) -> Self {
-        let content = self.content.try_coerce(DataFormat::Text);
+        let content = self.content.coerce_to(DataFormat::Text);
         if content.format() != DataFormat::Text {
             self.status = StreamStatus::Failure("Unable to convert underlying Data to Text".into());
         }

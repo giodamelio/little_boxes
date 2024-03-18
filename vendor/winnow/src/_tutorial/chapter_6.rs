@@ -72,13 +72,13 @@
 //! ```rust
 //! # use winnow::error::ErrorKind;
 //! # use winnow::error::ErrMode;
-//! pub type OResult<O, E = ErrorKind> = Result<O, ErrMode<E>>;
+//! pub type PResult<O, E = ErrorKind> = Result<O, ErrMode<E>>;
 //! ```
 //! [`PResult`] is just a fancy wrapper around `Result` that wraps our error in an [`ErrMode`]
 //! type.
 //!
 //! [`ErrMode`] is an enum with [`Backtrack`] and [`Cut`] variants (ignore [`Incomplete`] as its only
-//! relevant for [streaming][_topic::stream]).  By default, errors are [`Backtrack`], meaning that
+//! relevant for [streaming][_topic::stream]). By default, errors are [`Backtrack`], meaning that
 //! other parsing branches will be attempted on failure, like the next case of an [`alt`].  [`Cut`]
 //! shortcircuits all other branches, immediately reporting the error.
 //!
@@ -153,4 +153,4 @@ use crate::_topic;
 
 pub use super::chapter_5 as previous;
 pub use super::chapter_7 as next;
-pub use crate::_tutorial as table_of_content;
+pub use crate::_tutorial as table_of_contents;

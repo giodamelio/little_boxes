@@ -64,16 +64,6 @@ impl From<Str> for OsStr {
     }
 }
 
-#[cfg(feature = "perf")]
-impl From<&'_ Str> for OsStr {
-    fn from(id: &'_ Str) -> Self {
-        match id.clone().into_inner() {
-            crate::builder::StrInner::Static(s) => Self::from_static_ref(std::ffi::OsStr::new(s)),
-            crate::builder::StrInner::Owned(s) => Self::from_ref(std::ffi::OsStr::new(s.as_ref())),
-        }
-    }
-}
-
 impl From<&'_ Str> for OsStr {
     fn from(id: &'_ Str) -> Self {
         id.clone().into()
@@ -316,7 +306,7 @@ impl PartialEq for Inner {
 
 impl PartialOrd for Inner {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.as_os_str().partial_cmp(other.as_os_str())
+        Some(self.cmp(other))
     }
 }
 

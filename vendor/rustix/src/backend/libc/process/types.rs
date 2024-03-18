@@ -1,3 +1,4 @@
+#[cfg(not(any(target_os = "espidf", target_os = "vita")))]
 use crate::backend::c;
 
 /// A command for use with [`membarrier`] and [`membarrier_cpu`].
@@ -44,6 +45,7 @@ pub enum MembarrierCommand {
     target_os = "espidf",
     target_os = "fuchsia",
     target_os = "redox",
+    target_os = "vita",
     target_os = "wasi"
 )))]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -82,6 +84,7 @@ pub enum Resource {
         solarish,
         target_os = "aix",
         target_os = "haiku",
+        target_os = "hurd",
         target_os = "nto"
     )))]
     Locks = bitcast!(c::RLIMIT_LOCKS),
@@ -91,6 +94,7 @@ pub enum Resource {
         solarish,
         target_os = "aix",
         target_os = "haiku",
+        target_os = "hurd",
         target_os = "nto"
     )))]
     Sigpending = bitcast!(c::RLIMIT_SIGPENDING),
@@ -100,6 +104,7 @@ pub enum Resource {
         solarish,
         target_os = "aix",
         target_os = "haiku",
+        target_os = "hurd",
         target_os = "nto"
     )))]
     Msgqueue = bitcast!(c::RLIMIT_MSGQUEUE),
@@ -109,6 +114,7 @@ pub enum Resource {
         solarish,
         target_os = "aix",
         target_os = "haiku",
+        target_os = "hurd",
         target_os = "nto"
     )))]
     Nice = bitcast!(c::RLIMIT_NICE),
@@ -118,6 +124,7 @@ pub enum Resource {
         solarish,
         target_os = "aix",
         target_os = "haiku",
+        target_os = "hurd",
         target_os = "nto"
     )))]
     Rtprio = bitcast!(c::RLIMIT_RTPRIO),
@@ -129,6 +136,7 @@ pub enum Resource {
         target_os = "android",
         target_os = "emscripten",
         target_os = "haiku",
+        target_os = "hurd",
         target_os = "nto",
     )))]
     Rttime = bitcast!(c::RLIMIT_RTTIME),
@@ -141,21 +149,18 @@ impl Resource {
     pub const Rss: Self = Self::As;
 }
 
-pub const EXIT_SUCCESS: c::c_int = c::EXIT_SUCCESS;
-pub const EXIT_FAILURE: c::c_int = c::EXIT_FAILURE;
-#[cfg(not(any(target_os = "espidf", target_os = "wasi")))]
-pub const EXIT_SIGNALED_SIGABRT: c::c_int = 128 + c::SIGABRT;
-
 /// A CPU identifier as a raw integer.
 #[cfg(linux_kernel)]
 pub type RawCpuid = u32;
 #[cfg(freebsdlike)]
 pub type RawId = c::id_t;
 
-#[cfg(any(linux_kernel, target_os = "dragonfly", target_os = "fuchsia"))]
+#[cfg(any(linux_kernel, target_os = "fuchsia"))]
 pub(crate) type RawCpuSet = c::cpu_set_t;
+#[cfg(freebsdlike)]
+pub(crate) type RawCpuSet = c::cpuset_t;
 
-#[cfg(any(linux_kernel, target_os = "dragonfly", target_os = "fuchsia"))]
+#[cfg(any(freebsdlike, linux_kernel, target_os = "fuchsia"))]
 #[inline]
 pub(crate) fn raw_cpu_set_new() -> RawCpuSet {
     let mut set = unsafe { core::mem::zeroed() };
@@ -163,7 +168,5 @@ pub(crate) fn raw_cpu_set_new() -> RawCpuSet {
     set
 }
 
-#[cfg(any(linux_kernel, target_os = "fuchsia"))]
+#[cfg(any(freebsdlike, linux_kernel, target_os = "fuchsia"))]
 pub(crate) const CPU_SETSIZE: usize = c::CPU_SETSIZE as usize;
-#[cfg(target_os = "dragonfly")]
-pub(crate) const CPU_SETSIZE: usize = 256;

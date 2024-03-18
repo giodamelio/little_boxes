@@ -109,6 +109,33 @@ fn insert_order() {
 }
 
 #[test]
+fn shift_insert() {
+    let insert = [0, 4, 2, 12, 8, 7, 11, 5, 3, 17, 19, 22, 23];
+    let mut map = IndexMap::new();
+
+    for &elt in &insert {
+        map.shift_insert(0, elt, ());
+    }
+
+    assert_eq!(map.keys().count(), map.len());
+    assert_eq!(map.keys().count(), insert.len());
+    for (a, b) in insert.iter().rev().zip(map.keys()) {
+        assert_eq!(a, b);
+    }
+    for (i, k) in (0..insert.len()).zip(map.keys()) {
+        assert_eq!(map.get_index(i).unwrap().0, k);
+    }
+
+    // "insert" that moves an existing entry
+    map.shift_insert(0, insert[0], ());
+    assert_eq!(map.keys().count(), insert.len());
+    assert_eq!(insert[0], map.keys()[0]);
+    for (a, b) in insert[1..].iter().rev().zip(map.keys().skip(1)) {
+        assert_eq!(a, b);
+    }
+}
+
+#[test]
 fn grow() {
     let insert = [0, 4, 2, 12, 8, 7, 11];
     let not_present = [1, 3, 6, 9, 10];
@@ -360,6 +387,36 @@ fn occupied_entry_key() {
 }
 
 #[test]
+fn get_index_entry() {
+    let mut map = IndexMap::new();
+
+    assert!(map.get_index_entry(0).is_none());
+
+    map.insert(0, "0");
+    map.insert(1, "1");
+    map.insert(2, "2");
+    map.insert(3, "3");
+
+    assert!(map.get_index_entry(4).is_none());
+
+    {
+        let e = map.get_index_entry(1).unwrap();
+        assert_eq!(*e.key(), 1);
+        assert_eq!(*e.get(), "1");
+        assert_eq!(e.swap_remove(), "1");
+    }
+
+    {
+        let mut e = map.get_index_entry(1).unwrap();
+        assert_eq!(*e.key(), 3);
+        assert_eq!(*e.get(), "3");
+        assert_eq!(e.insert("4"), "3");
+    }
+
+    assert_eq!(*map.get(&3).unwrap(), "4");
+}
+
+#[test]
 fn keys() {
     let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
     let map: IndexMap<_, _> = vec.into_iter().collect();
@@ -446,4 +503,225 @@ fn iter_default() {
     assert_default::<Values<'static, K, V>>();
     assert_default::<ValuesMut<'static, K, V>>();
     assert_default::<IntoValues<K, V>>();
+}
+
+#[test]
+fn test_binary_search_by() {
+    // adapted from std's test for binary_search
+    let b: IndexMap<_, i32> = []
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&5)), Err(0));
+
+    let b: IndexMap<_, i32> = [4]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&3)), Err(0));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&4)), Ok(0));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&5)), Err(1));
+
+    let b: IndexMap<_, i32> = [1, 2, 4, 6, 8, 9]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&5)), Err(3));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&6)), Ok(3));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&7)), Err(4));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&8)), Ok(4));
+
+    let b: IndexMap<_, i32> = [1, 2, 4, 5, 6, 8]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&9)), Err(6));
+
+    let b: IndexMap<_, i32> = [1, 2, 4, 6, 7, 8, 9]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&6)), Ok(3));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&5)), Err(3));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&8)), Ok(5));
+
+    let b: IndexMap<_, i32> = [1, 2, 4, 5, 6, 8, 9]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&7)), Err(5));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&0)), Err(0));
+
+    let b: IndexMap<_, i32> = [1, 3, 3, 3, 7]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&0)), Err(0));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&1)), Ok(0));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&2)), Err(1));
+    assert!(match b.binary_search_by(|_, x| x.cmp(&3)) {
+        Ok(1..=3) => true,
+        _ => false,
+    });
+    assert!(match b.binary_search_by(|_, x| x.cmp(&3)) {
+        Ok(1..=3) => true,
+        _ => false,
+    });
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&4)), Err(4));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&5)), Err(4));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&6)), Err(4));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&7)), Ok(4));
+    assert_eq!(b.binary_search_by(|_, x| x.cmp(&8)), Err(5));
+}
+
+#[test]
+fn test_binary_search_by_key() {
+    // adapted from std's test for binary_search
+    let b: IndexMap<_, i32> = []
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by_key(&5, |_, &x| x), Err(0));
+
+    let b: IndexMap<_, i32> = [4]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by_key(&3, |_, &x| x), Err(0));
+    assert_eq!(b.binary_search_by_key(&4, |_, &x| x), Ok(0));
+    assert_eq!(b.binary_search_by_key(&5, |_, &x| x), Err(1));
+
+    let b: IndexMap<_, i32> = [1, 2, 4, 6, 8, 9]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by_key(&5, |_, &x| x), Err(3));
+    assert_eq!(b.binary_search_by_key(&6, |_, &x| x), Ok(3));
+    assert_eq!(b.binary_search_by_key(&7, |_, &x| x), Err(4));
+    assert_eq!(b.binary_search_by_key(&8, |_, &x| x), Ok(4));
+
+    let b: IndexMap<_, i32> = [1, 2, 4, 5, 6, 8]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by_key(&9, |_, &x| x), Err(6));
+
+    let b: IndexMap<_, i32> = [1, 2, 4, 6, 7, 8, 9]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by_key(&6, |_, &x| x), Ok(3));
+    assert_eq!(b.binary_search_by_key(&5, |_, &x| x), Err(3));
+    assert_eq!(b.binary_search_by_key(&8, |_, &x| x), Ok(5));
+
+    let b: IndexMap<_, i32> = [1, 2, 4, 5, 6, 8, 9]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by_key(&7, |_, &x| x), Err(5));
+    assert_eq!(b.binary_search_by_key(&0, |_, &x| x), Err(0));
+
+    let b: IndexMap<_, i32> = [1, 3, 3, 3, 7]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.binary_search_by_key(&0, |_, &x| x), Err(0));
+    assert_eq!(b.binary_search_by_key(&1, |_, &x| x), Ok(0));
+    assert_eq!(b.binary_search_by_key(&2, |_, &x| x), Err(1));
+    assert!(match b.binary_search_by_key(&3, |_, &x| x) {
+        Ok(1..=3) => true,
+        _ => false,
+    });
+    assert!(match b.binary_search_by_key(&3, |_, &x| x) {
+        Ok(1..=3) => true,
+        _ => false,
+    });
+    assert_eq!(b.binary_search_by_key(&4, |_, &x| x), Err(4));
+    assert_eq!(b.binary_search_by_key(&5, |_, &x| x), Err(4));
+    assert_eq!(b.binary_search_by_key(&6, |_, &x| x), Err(4));
+    assert_eq!(b.binary_search_by_key(&7, |_, &x| x), Ok(4));
+    assert_eq!(b.binary_search_by_key(&8, |_, &x| x), Err(5));
+}
+
+#[test]
+fn test_partition_point() {
+    // adapted from std's test for partition_point
+    let b: IndexMap<_, i32> = []
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.partition_point(|_, &x| x < 5), 0);
+
+    let b: IndexMap<_, i32> = [4]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.partition_point(|_, &x| x < 3), 0);
+    assert_eq!(b.partition_point(|_, &x| x < 4), 0);
+    assert_eq!(b.partition_point(|_, &x| x < 5), 1);
+
+    let b: IndexMap<_, i32> = [1, 2, 4, 6, 8, 9]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.partition_point(|_, &x| x < 5), 3);
+    assert_eq!(b.partition_point(|_, &x| x < 6), 3);
+    assert_eq!(b.partition_point(|_, &x| x < 7), 4);
+    assert_eq!(b.partition_point(|_, &x| x < 8), 4);
+
+    let b: IndexMap<_, i32> = [1, 2, 4, 5, 6, 8]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.partition_point(|_, &x| x < 9), 6);
+
+    let b: IndexMap<_, i32> = [1, 2, 4, 6, 7, 8, 9]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.partition_point(|_, &x| x < 6), 3);
+    assert_eq!(b.partition_point(|_, &x| x < 5), 3);
+    assert_eq!(b.partition_point(|_, &x| x < 8), 5);
+
+    let b: IndexMap<_, i32> = [1, 2, 4, 5, 6, 8, 9]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.partition_point(|_, &x| x < 7), 5);
+    assert_eq!(b.partition_point(|_, &x| x < 0), 0);
+
+    let b: IndexMap<_, i32> = [1, 3, 3, 3, 7]
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| (i + 100, x))
+        .collect();
+    assert_eq!(b.partition_point(|_, &x| x < 0), 0);
+    assert_eq!(b.partition_point(|_, &x| x < 1), 0);
+    assert_eq!(b.partition_point(|_, &x| x < 2), 1);
+    assert_eq!(b.partition_point(|_, &x| x < 3), 1);
+    assert_eq!(b.partition_point(|_, &x| x < 4), 4);
+    assert_eq!(b.partition_point(|_, &x| x < 5), 4);
+    assert_eq!(b.partition_point(|_, &x| x < 6), 4);
+    assert_eq!(b.partition_point(|_, &x| x < 7), 4);
+    assert_eq!(b.partition_point(|_, &x| x < 8), 5);
 }

@@ -109,7 +109,7 @@ pub(crate) fn clock_gettime(id: ClockId) -> Timespec {
         clock_gettime_old(id)
     }
 
-    // Use `unwrap()` here because `clock_getres` can fail if the clock itself
+    // Use `.unwrap()` here because `clock_getres` can fail if the clock itself
     // overflows a number of seconds, but if that happens, the monotonic clocks
     // can't maintain their invariants, or the realtime clocks aren't properly
     // configured.
@@ -167,8 +167,8 @@ pub(crate) fn clock_gettime_dynamic(id: DynamicClockId<'_>) -> io::Result<Timesp
         DynamicClockId::Tai => c::CLOCK_TAI,
 
         #[cfg(any(
-            freebsdlike,
             linux_kernel,
+            target_os = "freebsd",
             target_os = "fuchsia",
             target_os = "openbsd"
         ))]

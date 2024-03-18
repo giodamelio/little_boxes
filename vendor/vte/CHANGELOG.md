@@ -1,6 +1,18 @@
 CHANGELOG
 =========
 
+## 0.11.1
+
+- Minimum rust version has been bumped to 1.62.1
+- Support for ANSI terminal stream parsing under the `ansi` feature.
+- Addition of the `serde` feature which derives `Serialize` and `Deserialize`
+  for the types provided in the `ansi` module.
+
+## 0.11.0
+
+- Minimum rust version has been bumped to 1.56.0
+- Fixed infinite loop in `Params` iterator when 32nd parameter is a subparameter
+
 ## 0.10.1
 
 - Fixed invalid intermediates when transitioning from DCS to ESC

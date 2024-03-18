@@ -22,7 +22,7 @@ use {
     target_os = "espidf"
 ))]
 use {crate::backend::conv::ret_owned_fd, crate::event::EventfdFlags};
-#[cfg(bsd)]
+#[cfg(all(feature = "alloc", bsd))]
 use {crate::event::kqueue::Event, crate::utils::as_ptr, core::ptr::null};
 
 #[cfg(any(
@@ -61,12 +61,12 @@ pub(crate) fn eventfd(initval: u32, flags: EventfdFlags) -> io::Result<OwnedFd> 
     }
 }
 
-#[cfg(bsd)]
+#[cfg(all(feature = "alloc", bsd))]
 pub(crate) fn kqueue() -> io::Result<OwnedFd> {
     unsafe { ret_owned_fd(c::kqueue()) }
 }
 
-#[cfg(bsd)]
+#[cfg(all(feature = "alloc", bsd))]
 pub(crate) unsafe fn kevent(
     kq: BorrowedFd<'_>,
     changelist: &[Event],
@@ -147,7 +147,7 @@ pub(crate) fn port_get(
     Ok(Event(unsafe { event.assume_init() }))
 }
 
-#[cfg(solarish)]
+#[cfg(all(feature = "alloc", solarish))]
 pub(crate) fn port_getn(
     port: BorrowedFd<'_>,
     timeout: Option<&mut c::timespec>,
@@ -180,4 +180,12 @@ pub(crate) fn port_send(
     userdata: *mut c::c_void,
 ) -> io::Result<()> {
     unsafe { ret(c::port_send(borrowed_fd(port), events, userdata)) }
+}
+
+#[cfg(not(any(windows, target_os = "redox", target_os = "wasi")))]
+pub(crate) fn pause() {
+    let r = unsafe { libc::pause() };
+    let errno = libc_errno::errno().0;
+    debug_assert_eq!(r, -1);
+    debug_assert_eq!(errno, libc::EINTR);
 }

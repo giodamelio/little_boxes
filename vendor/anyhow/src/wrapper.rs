@@ -1,8 +1,11 @@
 use crate::StdError;
 use core::fmt::{self, Debug, Display};
 
-#[cfg(backtrace)]
-use std::any::Demand;
+#[cfg(feature = "std")]
+use alloc::boxed::Box;
+
+#[cfg(error_generic_member_access)]
+use std::error::Request;
 
 #[repr(transparent)]
 pub struct MessageError<M>(pub M);
@@ -74,8 +77,8 @@ impl StdError for BoxedError {
         self.0.source()
     }
 
-    #[cfg(backtrace)]
-    fn provide<'a>(&'a self, demand: &mut Demand<'a>) {
-        self.0.provide(demand);
+    #[cfg(error_generic_member_access)]
+    fn provide<'a>(&'a self, request: &mut Request<'a>) {
+        self.0.provide(request);
     }
 }

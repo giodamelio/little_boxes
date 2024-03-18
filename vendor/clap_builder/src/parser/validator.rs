@@ -63,10 +63,7 @@ impl<'cmd> Validator<'cmd> {
             }
         }
         if !has_subcmd && self.cmd.is_subcommand_required_set() {
-            let bn = self
-                .cmd
-                .get_bin_name()
-                .unwrap_or_else(|| self.cmd.get_name());
+            let bn = self.cmd.get_bin_name_fallback();
             return Err(Error::missing_subcommand(
                 self.cmd,
                 bn.to_string(),
@@ -432,6 +429,8 @@ impl<'cmd> Validator<'cmd> {
                             "".to_owned()
                         }
                     })
+                    .collect::<FlatSet<_>>()
+                    .into_iter()
                     .collect::<Vec<_>>()
             }
         };

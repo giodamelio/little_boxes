@@ -19,6 +19,9 @@ bitflags! {
 
         /// `F_OK`
         const EXISTS = linux_raw_sys::general::F_OK;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -57,6 +60,9 @@ bitflags! {
 
         /// `AT_STATX_DONT_SYNC`
         const STATX_DONT_SYNC = linux_raw_sys::general::AT_STATX_DONT_SYNC;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -113,18 +119,21 @@ bitflags! {
 
         /// `S_ISVTX`
         const SVTX = linux_raw_sys::general::S_ISVTX;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
 impl Mode {
     /// Construct a `Mode` from the mode bits of the `st_mode` field of a
-    /// `Stat`.
+    /// `Mode`.
     #[inline]
     pub const fn from_raw_mode(st_mode: RawMode) -> Self {
         Self::from_bits_truncate(st_mode)
     }
 
-    /// Construct an `st_mode` value from `Stat`.
+    /// Construct an `st_mode` value from a `Mode`.
     #[inline]
     pub const fn as_raw_mode(self) -> RawMode {
         self.bits()
@@ -170,9 +179,9 @@ bitflags! {
         /// Similar to `ACCMODE`, but just includes the read/write flags, and
         /// no other flags.
         ///
-        /// Some implementations include `O_PATH` in `O_ACCMODE`, when
+        /// On some platforms, `PATH` may be included in `ACCMODE`, when
         /// sometimes we really just want the read/write bits. Caution is
-        /// indicated, as the presence of `O_PATH` may mean that the read/write
+        /// indicated, as the presence of `PATH` may mean that the read/write
         /// bits don't have their usual meaning.
         const RWMODE = linux_raw_sys::general::O_RDONLY |
                        linux_raw_sys::general::O_WRONLY |
@@ -188,13 +197,13 @@ bitflags! {
         /// `O_DIRECTORY`
         const DIRECTORY = linux_raw_sys::general::O_DIRECTORY;
 
-        /// `O_DSYNC`. Linux 2.6.32 only supports `O_SYNC`.
+        /// `O_DSYNC`.
         const DSYNC = linux_raw_sys::general::O_SYNC;
 
         /// `O_EXCL`
         const EXCL = linux_raw_sys::general::O_EXCL;
 
-        /// `O_FSYNC`. Linux 2.6.32 only supports `O_SYNC`.
+        /// `O_FSYNC`.
         const FSYNC = linux_raw_sys::general::O_SYNC;
 
         /// `O_NOFOLLOW`
@@ -210,12 +219,14 @@ bitflags! {
         const WRONLY = linux_raw_sys::general::O_WRONLY;
 
         /// `O_RDWR`
+        ///
+        /// This is not equal to `RDONLY | WRONLY`. It's a distinct flag.
         const RDWR = linux_raw_sys::general::O_RDWR;
 
         /// `O_NOCTTY`
         const NOCTTY = linux_raw_sys::general::O_NOCTTY;
 
-        /// `O_RSYNC`. Linux 2.6.32 only supports `O_SYNC`.
+        /// `O_RSYNC`.
         const RSYNC = linux_raw_sys::general::O_SYNC;
 
         /// `O_SYNC`
@@ -238,6 +249,9 @@ bitflags! {
 
         /// `O_DIRECT`
         const DIRECT = linux_raw_sys::general::O_DIRECT;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -265,6 +279,9 @@ bitflags! {
 
         /// `RESOLVE_CACHED` (since Linux 5.12)
         const CACHED = linux_raw_sys::general::RESOLVE_CACHED as u64;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -283,6 +300,9 @@ bitflags! {
 
         /// `RENAME_WHITEOUT`
         const WHITEOUT = linux_raw_sys::general::RENAME_WHITEOUT;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -335,7 +355,7 @@ impl FileType {
         }
     }
 
-    /// Construct an `st_mode` value from `Stat`.
+    /// Construct an `st_mode` value from a `FileType`.
     #[inline]
     pub const fn as_raw_mode(self) -> RawMode {
         match self {
@@ -432,6 +452,9 @@ bitflags! {
         const HUGE_2GB = linux_raw_sys::general::MFD_HUGE_2GB;
         /// `MFD_HUGE_16GB`
         const HUGE_16GB = linux_raw_sys::general::MFD_HUGE_16GB;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -444,16 +467,19 @@ bitflags! {
     #[repr(transparent)]
     #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct SealFlags: u32 {
-       /// `F_SEAL_SEAL`.
-       const SEAL = linux_raw_sys::general::F_SEAL_SEAL;
-       /// `F_SEAL_SHRINK`.
-       const SHRINK = linux_raw_sys::general::F_SEAL_SHRINK;
-       /// `F_SEAL_GROW`.
-       const GROW = linux_raw_sys::general::F_SEAL_GROW;
-       /// `F_SEAL_WRITE`.
-       const WRITE = linux_raw_sys::general::F_SEAL_WRITE;
-       /// `F_SEAL_FUTURE_WRITE` (since Linux 5.1)
-       const FUTURE_WRITE = linux_raw_sys::general::F_SEAL_FUTURE_WRITE;
+        /// `F_SEAL_SEAL`.
+        const SEAL = linux_raw_sys::general::F_SEAL_SEAL;
+        /// `F_SEAL_SHRINK`.
+        const SHRINK = linux_raw_sys::general::F_SEAL_SHRINK;
+        /// `F_SEAL_GROW`.
+        const GROW = linux_raw_sys::general::F_SEAL_GROW;
+        /// `F_SEAL_WRITE`.
+        const WRITE = linux_raw_sys::general::F_SEAL_WRITE;
+        /// `F_SEAL_FUTURE_WRITE` (since Linux 5.1)
+        const FUTURE_WRITE = linux_raw_sys::general::F_SEAL_FUTURE_WRITE;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -511,6 +537,9 @@ bitflags! {
 
         /// `STATX_ALL`
         const ALL = linux_raw_sys::general::STATX_ALL;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -535,6 +564,9 @@ bitflags! {
         const INSERT_RANGE = linux_raw_sys::general::FALLOC_FL_INSERT_RANGE;
         /// `FALLOC_FL_UNSHARE_RANGE`
         const UNSHARE_RANGE = linux_raw_sys::general::FALLOC_FL_UNSHARE_RANGE;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -569,6 +601,9 @@ bitflags! {
 
         /// `ST_SYNCHRONOUS`
         const SYNCHRONOUS = linux_raw_sys::general::MS_SYNCHRONOUS as u64;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -618,10 +653,13 @@ pub struct Stat {
     pub st_size: i64,
     pub st_blksize: u32,
     pub st_blocks: u64,
+    #[deprecated(note = "Use `rustix::fs::StatExt::atime` instead.")]
     pub st_atime: u64,
     pub st_atime_nsec: u32,
+    #[deprecated(note = "Use `rustix::fs::StatExt::mtime` instead.")]
     pub st_mtime: u64,
     pub st_mtime_nsec: u32,
+    #[deprecated(note = "Use `rustix::fs::StatExt::ctime` instead.")]
     pub st_ctime: u64,
     pub st_ctime_nsec: u32,
     pub st_ino: u64,

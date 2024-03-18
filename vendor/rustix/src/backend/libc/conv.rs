@@ -3,7 +3,7 @@
 //! for converting between rustix's types and libc types.
 
 use super::c;
-#[cfg(not(any(windows, target_os = "espidf")))]
+#[cfg(all(feature = "alloc", not(any(windows, target_os = "espidf"))))]
 use super::fd::IntoRawFd;
 use super::fd::{AsRawFd, BorrowedFd, FromRawFd, LibcFd, OwnedFd, RawFd};
 #[cfg(not(windows))]
@@ -16,7 +16,7 @@ pub(super) fn c_str(c: &CStr) -> *const c::c_char {
     c.as_ptr()
 }
 
-#[cfg(not(any(windows, target_os = "espidf", target_os = "wasi")))]
+#[cfg(not(any(windows, target_os = "espidf", target_os = "vita", target_os = "wasi")))]
 #[inline]
 pub(super) fn no_fd() -> LibcFd {
     -1
@@ -27,7 +27,10 @@ pub(super) fn borrowed_fd(fd: BorrowedFd<'_>) -> LibcFd {
     fd.as_raw_fd() as LibcFd
 }
 
-#[cfg(not(any(windows, target_os = "espidf", target_os = "redox")))]
+#[cfg(all(
+    feature = "alloc",
+    not(any(windows, target_os = "espidf", target_os = "redox"))
+))]
 #[inline]
 pub(super) fn owned_fd(fd: OwnedFd) -> LibcFd {
     fd.into_raw_fd() as LibcFd
@@ -67,7 +70,7 @@ pub(super) fn ret_c_int(raw: c::c_int) -> io::Result<c::c_int> {
     }
 }
 
-#[cfg(linux_kernel)]
+#[cfg(any(linux_kernel, all(target_os = "redox", feature = "event")))]
 #[inline]
 pub(super) fn ret_u32(raw: c::c_int) -> io::Result<u32> {
     if raw == -1 {
@@ -133,7 +136,7 @@ pub(super) fn ret_discarded_fd(raw: LibcFd) -> io::Result<()> {
     }
 }
 
-#[cfg(not(any(windows, target_os = "wasi")))]
+#[cfg(all(feature = "alloc", not(any(windows, target_os = "wasi"))))]
 #[inline]
 pub(super) fn ret_discarded_char_ptr(raw: *mut c::c_char) -> io::Result<()> {
     if raw.is_null() {
@@ -179,7 +182,11 @@ pub(super) fn ret_send_recv(len: i32) -> io::Result<usize> {
     not(any(windows, target_os = "espidf", target_os = "redox", target_os = "wasi")),
     any(
         target_os = "android",
-        all(target_os = "linux", not(target_env = "musl"))
+        all(
+            target_os = "linux",
+            not(target_env = "musl"),
+            not(all(target_env = "uclibc", any(target_arch = "arm", target_arch = "mips")))
+        )
     )
 ))]
 #[inline]
@@ -189,10 +196,20 @@ pub(super) fn msg_iov_len(len: usize) -> c::size_t {
 
 /// Convert the value to the `msg_iovlen` field of a `msghdr` struct.
 #[cfg(all(
-    not(any(windows, target_os = "espidf", target_os = "redox", target_os = "wasi")),
+    not(any(
+        windows,
+        target_os = "espidf",
+        target_os = "redox",
+        target_os = "vita",
+        target_os = "wasi"
+    )),
     not(any(
         target_os = "android",
-        all(target_os = "linux", not(target_env = "musl"))
+        all(
+            target_os = "linux",
+            not(target_env = "musl"),
+            not(all(target_env = "uclibc", any(target_arch = "arm", target_arch = "mips")))
+        )
     ))
 ))]
 #[inline]
@@ -205,6 +222,7 @@ pub(crate) fn msg_iov_len(len: usize) -> c::c_int {
     bsd,
     solarish,
     target_env = "musl",
+    target_os = "aix",
     target_os = "emscripten",
     target_os = "fuchsia",
     target_os = "haiku",
@@ -221,12 +239,14 @@ pub(crate) fn msg_control_len(len: usize) -> c::socklen_t {
     solarish,
     windows,
     target_env = "musl",
+    target_os = "aix",
     target_os = "emscripten",
     target_os = "espidf",
     target_os = "fuchsia",
     target_os = "haiku",
     target_os = "nto",
     target_os = "redox",
+    target_os = "vita",
     target_os = "wasi",
 )))]
 #[inline]

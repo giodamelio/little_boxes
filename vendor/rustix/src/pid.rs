@@ -1,3 +1,5 @@
+//! The `Pid` type.
+
 #![allow(unsafe_code)]
 
 use crate::backend::c;
@@ -17,38 +19,37 @@ pub struct Pid(NonZeroI32);
 
 impl Pid {
     /// A `Pid` corresponding to the init process (pid 1).
-    pub const INIT: Self = Self(
-        // SAFETY: One is non-zero.
-        unsafe { NonZeroI32::new_unchecked(1) },
-    );
+    pub const INIT: Self = Self(match NonZeroI32::new(1) {
+        Some(n) => n,
+        None => panic!("unreachable"),
+    });
 
     /// Converts a `RawPid` into a `Pid`.
     ///
-    /// Returns `Some` for strictly positive `RawPid`s. Otherwise, returns
-    /// `None`.
+    /// Returns `Some` for positive `RawPid`s. Otherwise, returns `None`.
     ///
-    /// This is always safe because a `Pid` is a number without any guarantees
-    /// for the kernel. Non-child `Pid`s are always racy for any syscalls,
-    /// but can only cause logic errors. If you want race-free access or
-    /// control to non-child processes, please consider other mechanisms
-    /// like [pidfd] on Linux.
+    /// This is safe because a `Pid` is a number without any guarantees for the
+    /// kernel. Non-child `Pid`s are always racy for any syscalls, but can only
+    /// cause logic errors. If you want race-free access to or control of
+    /// non-child processes, please consider other mechanisms like [pidfd] on
+    /// Linux.
     ///
     /// [pidfd]: https://man7.org/linux/man-pages/man2/pidfd_open.2.html
     #[inline]
     pub const fn from_raw(raw: RawPid) -> Option<Self> {
         if raw > 0 {
-            // SAFETY: raw > 0.
+            // SAFETY: We just checked that `raw > 0`.
             unsafe { Some(Self::from_raw_unchecked(raw)) }
         } else {
             None
         }
     }
 
-    /// Converts a known strictly positive `RawPid` into a `Pid`.
+    /// Converts a known positive `RawPid` into a `Pid`.
     ///
     /// # Safety
     ///
-    /// The caller must guarantee `raw` is strictly positive.
+    /// The caller must guarantee `raw` is positive.
     #[inline]
     pub const unsafe fn from_raw_unchecked(raw: RawPid) -> Self {
         debug_assert!(raw > 0);

@@ -17,15 +17,15 @@ impl Color {
 
     /// Create a [`Style`][crate::Style] with this as the foreground
     #[inline]
-    pub fn on_default(self) -> crate::Style {
+    pub const fn on_default(self) -> crate::Style {
         crate::Style::new().fg_color(Some(self))
     }
 
     /// Render the ANSI code for a foreground color
     #[inline]
-    pub fn render_fg(self) -> impl core::fmt::Display {
+    pub fn render_fg(self) -> impl core::fmt::Display + Copy + Clone {
         match self {
-            Self::Ansi(color) => DisplayBuffer::default().write_str(color.as_fg_str()),
+            Self::Ansi(color) => color.as_fg_buffer(),
             Self::Ansi256(color) => color.as_fg_buffer(),
             Self::Rgb(color) => color.as_fg_buffer(),
         }
@@ -35,7 +35,7 @@ impl Color {
     #[cfg(feature = "std")]
     pub(crate) fn write_fg_to(self, write: &mut dyn std::io::Write) -> std::io::Result<()> {
         let buffer = match self {
-            Self::Ansi(color) => DisplayBuffer::default().write_str(color.as_fg_str()),
+            Self::Ansi(color) => color.as_fg_buffer(),
             Self::Ansi256(color) => color.as_fg_buffer(),
             Self::Rgb(color) => color.as_fg_buffer(),
         };
@@ -44,9 +44,9 @@ impl Color {
 
     /// Render the ANSI code for a background color
     #[inline]
-    pub fn render_bg(self) -> impl core::fmt::Display {
+    pub fn render_bg(self) -> impl core::fmt::Display + Copy + Clone {
         match self {
-            Self::Ansi(color) => DisplayBuffer::default().write_str(color.as_bg_str()),
+            Self::Ansi(color) => color.as_bg_buffer(),
             Self::Ansi256(color) => color.as_bg_buffer(),
             Self::Rgb(color) => color.as_bg_buffer(),
         }
@@ -56,7 +56,7 @@ impl Color {
     #[cfg(feature = "std")]
     pub(crate) fn write_bg_to(self, write: &mut dyn std::io::Write) -> std::io::Result<()> {
         let buffer = match self {
-            Self::Ansi(color) => DisplayBuffer::default().write_str(color.as_bg_str()),
+            Self::Ansi(color) => color.as_bg_buffer(),
             Self::Ansi256(color) => color.as_bg_buffer(),
             Self::Rgb(color) => color.as_bg_buffer(),
         };
@@ -64,7 +64,7 @@ impl Color {
     }
 
     #[inline]
-    pub(crate) fn render_underline(self) -> impl core::fmt::Display {
+    pub(crate) fn render_underline(self) -> impl core::fmt::Display + Copy + Clone {
         match self {
             Self::Ansi(color) => color.as_underline_buffer(),
             Self::Ansi256(color) => color.as_underline_buffer(),
@@ -185,14 +185,14 @@ impl AnsiColor {
 
     /// Create a [`Style`][crate::Style] with this as the foreground
     #[inline]
-    pub fn on_default(self) -> crate::Style {
-        crate::Style::new().fg_color(Some(self.into()))
+    pub const fn on_default(self) -> crate::Style {
+        crate::Style::new().fg_color(Some(Color::Ansi(self)))
     }
 
     /// Render the ANSI code for a foreground color
     #[inline]
-    pub fn render_fg(self) -> impl core::fmt::Display {
-        self.as_fg_str()
+    pub fn render_fg(self) -> impl core::fmt::Display + Copy + Clone {
+        NullFormatter(self.as_fg_str())
     }
 
     #[inline]
@@ -217,10 +217,15 @@ impl AnsiColor {
         }
     }
 
+    #[inline]
+    fn as_fg_buffer(&self) -> DisplayBuffer {
+        DisplayBuffer::default().write_str(self.as_fg_str())
+    }
+
     /// Render the ANSI code for a background color
     #[inline]
-    pub fn render_bg(self) -> impl core::fmt::Display {
-        self.as_bg_str()
+    pub fn render_bg(self) -> impl core::fmt::Display + Copy + Clone {
+        NullFormatter(self.as_bg_str())
     }
 
     #[inline]
@@ -243,6 +248,11 @@ impl AnsiColor {
             Self::BrightCyan => escape!("10", "6"),
             Self::BrightWhite => escape!("10", "7"),
         }
+    }
+
+    #[inline]
+    fn as_bg_buffer(&self) -> DisplayBuffer {
+        DisplayBuffer::default().write_str(self.as_bg_str())
     }
 
     #[inline]
@@ -340,8 +350,8 @@ impl Ansi256Color {
 
     /// Create a [`Style`][crate::Style] with this as the foreground
     #[inline]
-    pub fn on_default(self) -> crate::Style {
-        crate::Style::new().fg_color(Some(self.into()))
+    pub const fn on_default(self) -> crate::Style {
+        crate::Style::new().fg_color(Some(Color::Ansi256(self)))
     }
 
     #[inline]
@@ -396,7 +406,7 @@ impl Ansi256Color {
 
     /// Render the ANSI code for a foreground color
     #[inline]
-    pub fn render_fg(self) -> impl core::fmt::Display {
+    pub fn render_fg(self) -> impl core::fmt::Display + Copy + Clone {
         self.as_fg_buffer()
     }
 
@@ -410,7 +420,7 @@ impl Ansi256Color {
 
     /// Render the ANSI code for a background color
     #[inline]
-    pub fn render_bg(self) -> impl core::fmt::Display {
+    pub fn render_bg(self) -> impl core::fmt::Display + Copy + Clone {
         self.as_bg_buffer()
     }
 
@@ -460,8 +470,8 @@ impl RgbColor {
 
     /// Create a [`Style`][crate::Style] with this as the foreground
     #[inline]
-    pub fn on_default(self) -> crate::Style {
-        crate::Style::new().fg_color(Some(self.into()))
+    pub const fn on_default(self) -> crate::Style {
+        crate::Style::new().fg_color(Some(Color::Rgb(self)))
     }
 
     #[inline]
@@ -481,7 +491,7 @@ impl RgbColor {
 
     /// Render the ANSI code for a foreground color
     #[inline]
-    pub fn render_fg(self) -> impl core::fmt::Display {
+    pub fn render_fg(self) -> impl core::fmt::Display + Copy + Clone {
         self.as_fg_buffer()
     }
 
@@ -499,7 +509,7 @@ impl RgbColor {
 
     /// Render the ANSI code for a background color
     #[inline]
-    pub fn render_bg(self) -> impl core::fmt::Display {
+    pub fn render_bg(self) -> impl core::fmt::Display + Copy + Clone {
         self.as_bg_buffer()
     }
 
@@ -536,9 +546,11 @@ impl From<(u8, u8, u8)> for RgbColor {
     }
 }
 
-#[derive(Default, Debug)]
+const DISPLAY_BUFFER_CAPACITY: usize = 19;
+
+#[derive(Copy, Clone, Default, Debug)]
 struct DisplayBuffer {
-    buffer: [u8; 19],
+    buffer: [u8; DISPLAY_BUFFER_CAPACITY],
     len: usize,
 }
 
@@ -593,11 +605,24 @@ impl DisplayBuffer {
 impl core::fmt::Display for DisplayBuffer {
     #[inline]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.as_str().fmt(f)
+        let s = self.as_str();
+        write!(f, "{s}")
+    }
+}
+
+#[derive(Copy, Clone, Default, Debug)]
+struct NullFormatter<D: core::fmt::Display>(D);
+
+impl<D: core::fmt::Display> core::fmt::Display for NullFormatter<D> {
+    #[inline]
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let d = &self.0;
+        write!(f, "{d}")
     }
 }
 
 #[cfg(test)]
+#[cfg(feature = "std")]
 mod test {
     use super::*;
 
@@ -606,5 +631,35 @@ mod test {
         let c = RgbColor(255, 255, 255);
         let actual = c.render_fg().to_string();
         assert_eq!(actual, "\u{1b}[38;2;255;255;255m");
+        assert_eq!(actual.len(), DISPLAY_BUFFER_CAPACITY);
+    }
+
+    #[test]
+    fn print_size_of() {
+        use std::mem::size_of;
+        dbg!(size_of::<Color>());
+        dbg!(size_of::<AnsiColor>());
+        dbg!(size_of::<Ansi256Color>());
+        dbg!(size_of::<RgbColor>());
+        dbg!(size_of::<DisplayBuffer>());
+    }
+
+    #[test]
+    fn no_align() {
+        #[track_caller]
+        fn assert_no_align(d: impl core::fmt::Display) {
+            let expected = format!("{d}");
+            let actual = format!("{d:<10}");
+            assert_eq!(expected, actual);
+        }
+
+        assert_no_align(AnsiColor::White.render_fg());
+        assert_no_align(AnsiColor::White.render_bg());
+        assert_no_align(Ansi256Color(0).render_fg());
+        assert_no_align(Ansi256Color(0).render_bg());
+        assert_no_align(RgbColor(0, 0, 0).render_fg());
+        assert_no_align(RgbColor(0, 0, 0).render_bg());
+        assert_no_align(Color::Ansi(AnsiColor::White).render_fg());
+        assert_no_align(Color::Ansi(AnsiColor::White).render_bg());
     }
 }

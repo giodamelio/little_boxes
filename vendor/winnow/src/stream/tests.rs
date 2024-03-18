@@ -1,7 +1,27 @@
 #[cfg(feature = "std")]
 use proptest::prelude::*;
 
+use crate::error::ErrMode::Backtrack;
+use crate::error::{ErrorKind, InputError};
+use crate::token::literal;
+use crate::{
+    combinator::{separated, separated_pair},
+    PResult, Parser,
+};
+
 use super::*;
+
+#[cfg(feature = "std")]
+#[test]
+fn test_fxhashmap_compiles() {
+    let input = "a=b";
+    fn pair(i: &mut &str) -> PResult<(char, char)> {
+        let out = separated_pair('a', '=', 'b').parse_next(i)?;
+        Ok(out)
+    }
+
+    let _: rustc_hash::FxHashMap<char, char> = separated(0.., pair, ',').parse(input).unwrap();
+}
 
 #[test]
 fn test_offset_u8() {
@@ -113,4 +133,96 @@ fn test_partial_complete() {
 
     i.restore_partial(incomplete_state);
     assert!(i.is_partial(), "incomplete stream state should be restored");
+}
+
+#[test]
+fn test_custom_slice() {
+    type Token = usize;
+    type TokenSlice<'i> = &'i [Token];
+
+    let mut tokens: TokenSlice<'_> = &[1, 2, 3, 4];
+
+    let input = &mut tokens;
+    let start = input.checkpoint();
+    let _ = input.next_token();
+    let _ = input.next_token();
+    let offset = input.offset_from(&start);
+    assert_eq!(offset, 2);
+}
+
+#[test]
+fn test_literal_support_char() {
+    assert_eq!(
+        literal::<_, _, InputError<_>>('π').parse_peek("π"),
+        Ok(("", "π"))
+    );
+    assert_eq!(
+        literal::<_, _, InputError<_>>('π').parse_peek("π3.14"),
+        Ok(("3.14", "π"))
+    );
+
+    assert_eq!(
+        literal::<_, _, InputError<_>>("π").parse_peek("π3.14"),
+        Ok(("3.14", "π"))
+    );
+
+    assert_eq!(
+        literal::<_, _, InputError<_>>('-').parse_peek("π"),
+        Err(Backtrack(InputError::new("π", ErrorKind::Tag)))
+    );
+
+    assert_eq!(
+        literal::<_, Partial<&[u8]>, InputError<_>>('π').parse_peek(Partial::new(b"\xCF\x80")),
+        Ok((Partial::new(Default::default()), "π".as_bytes()))
+    );
+    assert_eq!(
+        literal::<_, &[u8], InputError<_>>('π').parse_peek(b"\xCF\x80"),
+        Ok((Default::default(), "π".as_bytes()))
+    );
+
+    assert_eq!(
+        literal::<_, Partial<&[u8]>, InputError<_>>('π').parse_peek(Partial::new(b"\xCF\x803.14")),
+        Ok((Partial::new(&b"3.14"[..]), "π".as_bytes()))
+    );
+    assert_eq!(
+        literal::<_, &[u8], InputError<_>>('π').parse_peek(b"\xCF\x80"),
+        Ok((Default::default(), "π".as_bytes()))
+    );
+
+    assert_eq!(
+        literal::<_, &[u8], InputError<_>>('π').parse_peek(b"\xCF\x803.14"),
+        Ok((&b"3.14"[..], "π".as_bytes()))
+    );
+
+    assert_eq!(
+        literal::<_, &[u8], InputError<_>>(AsciiCaseless('a')).parse_peek(b"ABCxyz"),
+        Ok((&b"BCxyz"[..], &b"A"[..]))
+    );
+
+    assert_eq!(
+        literal::<_, &[u8], InputError<_>>('a').parse_peek(b"ABCxyz"),
+        Err(Backtrack(InputError::new(&b"ABCxyz"[..], ErrorKind::Tag)))
+    );
+
+    assert_eq!(
+        literal::<_, &[u8], InputError<_>>(AsciiCaseless('π')).parse_peek(b"\xCF\x803.14"),
+        Ok((&b"3.14"[..], "π".as_bytes()))
+    );
+
+    assert_eq!(
+        literal::<_, _, InputError<_>>(AsciiCaseless('🧑')).parse_peek("🧑你好"),
+        Ok(("你好", "🧑"))
+    );
+
+    let mut buffer = [0; 4];
+    let input = '\u{241b}'.encode_utf8(&mut buffer);
+    assert_eq!(
+        literal::<_, &[u8], InputError<_>>(AsciiCaseless('␛')).parse_peek(input.as_bytes()),
+        Ok((&b""[..], [226, 144, 155].as_slice()))
+    );
+
+    assert_eq!(
+        literal::<_, &[u8], InputError<_>>('-').parse_peek(b"\xCF\x80"),
+        Err(Backtrack(InputError::new(&b"\xCF\x80"[..], ErrorKind::Tag)))
+    );
 }

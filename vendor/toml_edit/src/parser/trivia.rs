@@ -99,7 +99,7 @@ pub(crate) fn ws_comment_newline<'i>(input: &mut Input<'i>) -> PResult<&'i [u8]>
                 alt((take_while(1.., WSCHAR), newline.value(&b"\n"[..]))),
             )
             .map(|()| ()),
-            comment.value(()),
+            comment.void(),
         )),
     )
     .map(|()| ())
@@ -120,6 +120,8 @@ pub(crate) fn line_trailing(input: &mut Input<'_>) -> PResult<std::ops::Range<us
 }
 
 #[cfg(test)]
+#[cfg(feature = "parse")]
+#[cfg(feature = "display")]
 mod test {
     use super::*;
 

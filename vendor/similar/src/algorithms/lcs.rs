@@ -1,4 +1,4 @@
-//! Hunt–McIlroy / Hunt–Szymanski LCS diff algorithm.
+//! LCS diff algorithm.
 //!
 //! * time: `O((NM)D log (M)D)`
 //! * space `O(MN)`
@@ -9,7 +9,7 @@ use std::time::Instant;
 use crate::algorithms::utils::{common_prefix_len, common_suffix_len, is_empty_range};
 use crate::algorithms::DiffHook;
 
-/// Hunt–McIlroy / Hunt–Szymanski LCS diff algorithm.
+/// LCS diff algorithm.
 ///
 /// Diff `old`, between indices `old_range` and `new` between indices `new_range`.
 ///
@@ -33,7 +33,7 @@ where
     diff_deadline(d, old, old_range, new, new_range, None)
 }
 
-/// Hunt–McIlroy / Hunt–Szymanski LCS diff algorithm.
+/// LCS diff algorithm.
 ///
 /// Diff `old`, between indices `old_range` and `new` between indices `new_range`.
 ///
@@ -55,18 +55,26 @@ where
 {
     if is_empty_range(&new_range) {
         d.delete(old_range.start, old_range.len(), new_range.start)?;
+        d.finish()?;
         return Ok(());
     } else if is_empty_range(&old_range) {
         d.insert(old_range.start, new_range.start, new_range.len())?;
+        d.finish()?;
         return Ok(());
     }
 
     let common_prefix_len = common_prefix_len(old, old_range.clone(), new, new_range.clone());
-    let common_suffix_len = common_suffix_len(old, old_range.clone(), new, new_range.clone());
+    let common_suffix_len = common_suffix_len(
+        old,
+        old_range.start + common_prefix_len..old_range.end,
+        new,
+        new_range.start + common_prefix_len..new_range.end,
+    );
 
     // If the sequences are not different then we're done
     if common_prefix_len == old_range.len() && (old_range.len() == new_range.len()) {
         d.equal(0, 0, old_range.len())?;
+        d.finish()?;
         return Ok(());
     }
 
@@ -95,8 +103,8 @@ where
                 d.equal(old_orig_idx, new_orig_idx, 1)?;
                 old_idx += 1;
                 new_idx += 1;
-            } else if table.get(&(new_idx, old_idx + 1)).map_or(0, |&x| x)
-                >= table.get(&(new_idx + 1, old_idx)).map_or(0, |&x| x)
+            } else if table.get(&(new_idx, old_idx + 1)).unwrap_or(&0)
+                >= table.get(&(new_idx + 1, old_idx)).unwrap_or(&0)
             {
                 d.delete(old_orig_idx, 1, new_orig_idx)?;
                 old_idx += 1;
@@ -166,12 +174,12 @@ where
 
         for j in (0..old_len).rev() {
             let val = if new[i] == old[j] {
-                table.get(&(i + 1, j + 1)).map_or(0, |&x| x) + 1
+                table.get(&(i + 1, j + 1)).unwrap_or(&0) + 1
             } else {
-                table
+                *table
                     .get(&(i + 1, j))
-                    .map_or(0, |&x| x)
-                    .max(table.get(&(i, j + 1)).map_or(0, |&x| x))
+                    .unwrap_or(&0)
+                    .max(table.get(&(i, j + 1)).unwrap_or(&0))
             };
             if val > 0 {
                 table.insert((i, j), val);
@@ -233,4 +241,56 @@ fn test_same() {
     let mut d = crate::algorithms::Capture::new();
     diff(&mut d, a, 0..a.len(), b, 0..b.len()).unwrap();
     insta::assert_debug_snapshot!(d.ops());
+}
+
+#[test]
+fn test_finish_called() {
+    struct HasRunFinish(bool);
+
+    impl DiffHook for HasRunFinish {
+        type Error = ();
+        fn finish(&mut self) -> Result<(), Self::Error> {
+            self.0 = true;
+            Ok(())
+        }
+    }
+
+    let mut d = HasRunFinish(false);
+    let slice = &[1, 2];
+    let slice2 = &[1, 2, 3];
+    diff(&mut d, slice, 0..slice.len(), slice2, 0..slice2.len()).unwrap();
+    assert!(d.0);
+
+    let mut d = HasRunFinish(false);
+    let slice = &[1, 2];
+    diff(&mut d, slice, 0..slice.len(), slice, 0..slice.len()).unwrap();
+    assert!(d.0);
+
+    let mut d = HasRunFinish(false);
+    let slice: &[u8] = &[];
+    diff(&mut d, slice, 0..slice.len(), slice, 0..slice.len()).unwrap();
+    assert!(d.0);
+}
+
+#[test]
+fn test_bad_range_regression() {
+    use crate::algorithms::Capture;
+    use crate::DiffOp;
+    let mut d = Capture::new();
+    diff(&mut d, &[0], 0..1, &[0, 0], 0..2).unwrap();
+    assert_eq!(
+        d.into_ops(),
+        vec![
+            DiffOp::Equal {
+                old_index: 0,
+                new_index: 0,
+                len: 1
+            },
+            DiffOp::Insert {
+                old_index: 1,
+                new_index: 1,
+                new_len: 1
+            }
+        ]
+    );
 }

@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.63"
 name = "linux-raw-sys"
-version = "0.4.5"
+version = "0.4.13"
 authors = ["Dan Gohman <dev@sunfishcode.online>"]
 exclude = [
     "/gen",
@@ -36,6 +36,14 @@ features = [
     "default",
     "ioctl",
     "netlink",
+    "io_uring",
+    "if_ether",
+    "net",
+    "prctl",
+    "elf",
+    "xdp",
+    "mempolicy",
+    "system",
 ]
 targets = [
     "x86_64-unknown-linux-gnu",
@@ -63,11 +71,14 @@ default = [
     "general",
     "errno",
 ]
+elf = []
 errno = []
 general = []
 if_ether = []
+if_packet = []
 io_uring = []
 ioctl = []
+mempolicy = []
 net = []
 netlink = []
 no_std = []
@@ -79,3 +90,4 @@ rustc-dep-of-std = [
 ]
 std = []
 system = []
+xdp = []

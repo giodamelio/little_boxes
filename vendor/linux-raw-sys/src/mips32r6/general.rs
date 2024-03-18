@@ -892,9 +892,9 @@ pub sa_handler_kernel: __kernel_sighandler_t,
 pub sa_flags: crate::ctypes::c_ulong,
 pub sa_mask: kernel_sigset_t,
 }
-pub const LINUX_VERSION_CODE: u32 = 394240;
+pub const LINUX_VERSION_CODE: u32 = 393984;
 pub const LINUX_VERSION_MAJOR: u32 = 6;
-pub const LINUX_VERSION_PATCHLEVEL: u32 = 4;
+pub const LINUX_VERSION_PATCHLEVEL: u32 = 3;
 pub const LINUX_VERSION_SUBLEVEL: u32 = 0;
 pub const AT_SYSINFO_EHDR: u32 = 33;
 pub const AT_VECTOR_SIZE_ARCH: u32 = 1;
@@ -1028,6 +1028,7 @@ pub const O_CLOEXEC: u32 = 524288;
 pub const O_PATH: u32 = 2097152;
 pub const __O_TMPFILE: u32 = 4194304;
 pub const O_TMPFILE: u32 = 4259840;
+pub const O_TMPFILE_MASK: u32 = 4260096;
 pub const O_NDELAY: u32 = 128;
 pub const F_DUPFD: u32 = 0;
 pub const F_GETFD: u32 = 1;
@@ -1618,6 +1619,19 @@ pub const POLLRDHUP: u32 = 8192;
 pub const GRND_NONBLOCK: u32 = 1;
 pub const GRND_RANDOM: u32 = 2;
 pub const GRND_INSECURE: u32 = 4;
+pub const LINUX_REBOOT_MAGIC1: u32 = 4276215469;
+pub const LINUX_REBOOT_MAGIC2: u32 = 672274793;
+pub const LINUX_REBOOT_MAGIC2A: u32 = 85072278;
+pub const LINUX_REBOOT_MAGIC2B: u32 = 369367448;
+pub const LINUX_REBOOT_MAGIC2C: u32 = 537993216;
+pub const LINUX_REBOOT_CMD_RESTART: u32 = 19088743;
+pub const LINUX_REBOOT_CMD_HALT: u32 = 3454992675;
+pub const LINUX_REBOOT_CMD_CAD_ON: u32 = 2309737967;
+pub const LINUX_REBOOT_CMD_CAD_OFF: u32 = 0;
+pub const LINUX_REBOOT_CMD_POWER_OFF: u32 = 1126301404;
+pub const LINUX_REBOOT_CMD_RESTART2: u32 = 2712847316;
+pub const LINUX_REBOOT_CMD_SW_SUSPEND: u32 = 3489725666;
+pub const LINUX_REBOOT_CMD_KEXEC: u32 = 1163412803;
 pub const ITIMER_REAL: u32 = 0;
 pub const ITIMER_VIRTUAL: u32 = 1;
 pub const ITIMER_PROF: u32 = 2;
@@ -2743,7 +2757,6 @@ pub const UFFD_FEATURE_MINOR_HUGETLBFS: u32 = 512;
 pub const UFFD_FEATURE_MINOR_SHMEM: u32 = 1024;
 pub const UFFD_FEATURE_EXACT_ADDRESS: u32 = 2048;
 pub const UFFD_FEATURE_WP_HUGETLBFS_SHMEM: u32 = 4096;
-pub const UFFD_FEATURE_WP_UNPOPULATED: u32 = 8192;
 pub const UFFD_USER_MODE_ONLY: u32 = 1;
 pub const DT_UNKNOWN: u32 = 0;
 pub const DT_FIFO: u32 = 1;

@@ -2,6 +2,16 @@
 
 All notable changes to similar are documented here.
 
+## 2.4.0
+
+* Fixed a bug where the LCS diff algorithm didn't always call `D::finish`.  (#58)
+* Fixed a bug in LCS that caused a panic if the common prefix and the
+  common suffix overlapped.  (#59)
+
+## 2.3.0
+
+* Added support for `Change::value_ref` and `Change::value_mut`.
+
 ## 2.2.1
 
 * Fixed a panic in LCS diffs on matching input.  (#43)

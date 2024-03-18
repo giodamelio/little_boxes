@@ -156,7 +156,7 @@ impl Effects {
 
     /// Render the ANSI code
     #[inline]
-    pub fn render(self) -> impl core::fmt::Display {
+    pub fn render(self) -> impl core::fmt::Display + Copy + Clone {
         EffectsDisplay(self)
     }
 
@@ -307,13 +307,15 @@ pub(crate) const METADATA: [Metadata; 12] = [
     },
 ];
 
+#[derive(Copy, Clone, Default, Debug)]
 struct EffectsDisplay(Effects);
 
 impl core::fmt::Display for EffectsDisplay {
     #[inline]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         for index in self.0.index_iter() {
-            METADATA[index].escape.fmt(f)?;
+            let escape = METADATA[index].escape;
+            write!(f, "{escape}")?;
         }
         Ok(())
     }
@@ -364,5 +366,30 @@ impl Iterator for EffectIndexIter {
         }
 
         None
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "std")]
+mod test {
+    use super::*;
+
+    #[test]
+    fn print_size_of() {
+        use std::mem::size_of;
+        dbg!(size_of::<Effects>());
+        dbg!(size_of::<EffectsDisplay>());
+    }
+
+    #[test]
+    fn no_align() {
+        #[track_caller]
+        fn assert_no_align(d: impl core::fmt::Display) {
+            let expected = format!("{d}");
+            let actual = format!("{d:<10}");
+            assert_eq!(expected, actual);
+        }
+
+        assert_no_align(Effects::BOLD.render());
     }
 }

@@ -325,6 +325,24 @@ fn literal_span() {
     assert!(positive.subspan(1..4).is_none());
 }
 
+#[cfg(span_locations)]
+#[test]
+fn source_text() {
+    let input = "    𓀕 a z    ";
+    let mut tokens = input
+        .parse::<proc_macro2::TokenStream>()
+        .unwrap()
+        .into_iter();
+
+    let first = tokens.next().unwrap();
+    assert_eq!("𓀕", first.span().source_text().unwrap());
+
+    let second = tokens.next().unwrap();
+    let third = tokens.next().unwrap();
+    assert_eq!("z", third.span().source_text().unwrap());
+    assert_eq!("a", second.span().source_text().unwrap());
+}
+
 #[test]
 fn roundtrip() {
     fn roundtrip(p: &str) {
@@ -738,4 +756,40 @@ fn byte_order_mark() {
 
     let string = "foo\u{feff}";
     string.parse::<TokenStream>().unwrap_err();
+}
+
+#[cfg(span_locations)]
+fn create_span() -> proc_macro2::Span {
+    let tts: TokenStream = "1".parse().unwrap();
+    match tts.into_iter().next().unwrap() {
+        TokenTree::Literal(literal) => literal.span(),
+        _ => unreachable!(),
+    }
+}
+
+#[cfg(span_locations)]
+#[test]
+fn test_invalidate_current_thread_spans() {
+    let actual = format!("{:#?}", create_span());
+    assert_eq!(actual, "bytes(1..2)");
+    let actual = format!("{:#?}", create_span());
+    assert_eq!(actual, "bytes(3..4)");
+
+    proc_macro2::extra::invalidate_current_thread_spans();
+
+    let actual = format!("{:#?}", create_span());
+    // Test that span offsets have been reset after the call
+    // to invalidate_current_thread_spans()
+    assert_eq!(actual, "bytes(1..2)");
+}
+
+#[cfg(span_locations)]
+#[test]
+#[should_panic(expected = "Invalid span with no related FileInfo!")]
+fn test_use_span_after_invalidation() {
+    let span = create_span();
+
+    proc_macro2::extra::invalidate_current_thread_spans();
+
+    span.source_text();
 }

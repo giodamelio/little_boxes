@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.64.0"
+rust-version = "1.70.0"
 name = "snapbox-macros"
-version = "0.3.4"
+version = "0.3.8"
 include = [
     "build.rs",
     "src/**/*",
@@ -41,7 +41,7 @@ repository = "https://github.com/assert-rs/trycmd/"
 all-features = true
 
 [dependencies.anstream]
-version = "0.3.0"
+version = "0.6.7"
 optional = true
 
 [features]

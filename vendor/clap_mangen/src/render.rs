@@ -9,9 +9,10 @@ pub(crate) fn subcommand_heading(cmd: &clap::Command) -> &str {
 }
 
 pub(crate) fn about(roff: &mut Roff, cmd: &clap::Command) {
+    let name = cmd.get_display_name().unwrap_or_else(|| cmd.get_name());
     let s = match cmd.get_about().or_else(|| cmd.get_long_about()) {
-        Some(about) => format!("{} - {}", cmd.get_name(), about),
-        None => cmd.get_name().to_string(),
+        Some(about) => format!("{} - {}", name, about),
+        None => name.to_owned(),
     };
     roff.text([roman(s)]);
 }
@@ -29,7 +30,8 @@ pub(crate) fn description(roff: &mut Roff, cmd: &clap::Command) {
 }
 
 pub(crate) fn synopsis(roff: &mut Roff, cmd: &clap::Command) {
-    let mut line = vec![bold(cmd.get_name()), roman(" ")];
+    let name = cmd.get_bin_name().unwrap_or_else(|| cmd.get_name());
+    let mut line = vec![bold(name), roman(" ")];
 
     for opt in cmd.get_arguments().filter(|i| !i.is_hide_set()) {
         let (lhs, rhs) = option_markers(opt);
@@ -99,7 +101,7 @@ pub(crate) fn options(roff: &mut Roff, cmd: &clap::Command) {
             (None, None) => vec![],
         };
 
-        if opt.get_action().takes_values() {
+        if opt.get_num_args().expect("built").takes_values() {
             if let Some(value) = &opt.get_value_names() {
                 header.push(roman("="));
                 header.push(italic(value.join(" ")));
@@ -288,7 +290,7 @@ fn option_environment(opt: &clap::Arg) -> Option<Vec<Inline>> {
 }
 
 fn option_default_values(opt: &clap::Arg) -> Option<String> {
-    if opt.is_hide_default_value_set() || !opt.get_action().takes_values() {
+    if opt.is_hide_default_value_set() || !opt.get_num_args().expect("built").takes_values() {
         return None;
     } else if !opt.get_default_values().is_empty() {
         let values = opt
@@ -305,11 +307,15 @@ fn option_default_values(opt: &clap::Arg) -> Option<String> {
 }
 
 fn get_possible_values(arg: &clap::Arg) -> Option<(Vec<String>, bool)> {
+    if arg.is_hide_possible_values_set() {
+        return None;
+    }
+
     let possibles = &arg.get_possible_values();
     let possibles: Vec<&clap::builder::PossibleValue> =
         possibles.iter().filter(|pos| !pos.is_hide_set()).collect();
 
-    if !(possibles.is_empty() || arg.is_hide_possible_values_set()) {
+    if !possibles.is_empty() {
         return Some(format_possible_values(&possibles));
     }
     None

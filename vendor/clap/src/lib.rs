@@ -6,11 +6,13 @@
 //! > **Command Line Argument Parser for Rust**
 //!
 //! Quick Links:
-//! - Derive [tutorial][_derive::_tutorial] and [reference][_derive]
-//! - Builder [tutorial][_tutorial] and [reference](index.html)
+//! - Derive [tutorial][_derive::_tutorial::chapter_0] and [reference][_derive]
+//! - Builder [tutorial][_tutorial::chapter_0] and [reference](index.html)
 //! - [Cookbook][_cookbook]
 //! - [FAQ][_faq]
 //! - [Discussions](https://github.com/clap-rs/clap/discussions)
+//! - [CHANGELOG](https://github.com/clap-rs/clap/blob/v4.5.3/CHANGELOG.md) (includes major version migration
+//!   guides)
 //!
 //! ## Aspirations
 //!
@@ -24,7 +26,7 @@
 //!   - Leverage feature flags to keep to one active branch
 //!   - Being under [WG-CLI](https://github.com/rust-cli/team/) to increase the bus factor
 //! - We follow semver and will wait about 6-9 months between major breaking changes
-//! - We will support the last two minor Rust releases (MSRV, currently 1.64.0)
+//! - We will support the last two minor Rust releases (MSRV, currently 1.74)
 //!
 //! While these aspirations can be at odds with fast build times and low binary
 //! size, we will still strive to keep these reasonable for the flexibility you
@@ -111,10 +113,3 @@ pub mod _faq;
 pub mod _features;
 #[cfg(feature = "unstable-doc")]
 pub mod _tutorial;
-
-#[doc(hidden)]
-#[cfg(feature = "derive")]
-pub mod __derive_refs {
-    #[doc(hidden)]
-    pub use once_cell;
-}

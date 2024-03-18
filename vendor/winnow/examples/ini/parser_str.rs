@@ -6,7 +6,7 @@ use winnow::{
     combinator::opt,
     combinator::repeat,
     combinator::{delimited, terminated},
-    token::{take_till0, take_while},
+    token::{take_till, take_while},
 };
 
 pub type Stream<'i> = &'i str;
@@ -36,9 +36,9 @@ fn keys_and_values<'s>(input: &mut Stream<'s>) -> PResult<HashMap<&'s str, &'s s
 fn key_value<'s>(i: &mut Stream<'s>) -> PResult<(&'s str, &'s str)> {
     let key = alphanumeric.parse_next(i)?;
     let _ = (opt(space), "=", opt(space)).parse_next(i)?;
-    let val = take_till0(is_line_ending_or_comment).parse_next(i)?;
+    let val = take_till(0.., is_line_ending_or_comment).parse_next(i)?;
     let _ = opt(space).parse_next(i)?;
-    let _ = opt((";", not_line_ending)).parse_next(i)?;
+    let _ = opt((";", till_line_ending)).parse_next(i)?;
     let _ = opt(space_or_line_ending).parse_next(i)?;
 
     Ok((key, val))
@@ -48,7 +48,7 @@ fn is_line_ending_or_comment(chr: char) -> bool {
     chr == ';' || chr == '\n'
 }
 
-fn not_line_ending<'s>(i: &mut Stream<'s>) -> PResult<&'s str> {
+fn till_line_ending<'s>(i: &mut Stream<'s>) -> PResult<&'s str> {
     take_while(0.., |c| c != '\r' && c != '\n').parse_next(i)
 }
 

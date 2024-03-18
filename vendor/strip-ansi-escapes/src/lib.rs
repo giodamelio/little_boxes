@@ -18,7 +18,7 @@
 //!
 //! # fn foo() -> io::Result<()> {
 //! let bytes_with_colors = b"\x1b[32mfoo\x1b[m bar";
-//! let plain_bytes = strip_ansi_escapes::strip(&bytes_with_colors)?;
+//! let plain_bytes = strip_ansi_escapes::strip(&bytes_with_colors);
 //! io::stdout().write_all(&plain_bytes)?;
 //! # Ok(())
 //! # }
@@ -59,14 +59,36 @@ where
 /// See [the module documentation][mod] for an example.
 ///
 /// [mod]: index.html
-pub fn strip<T>(data: T) -> io::Result<Vec<u8>>
+pub fn strip<T>(data: T) -> Vec<u8>
 where
     T: AsRef<[u8]>,
 {
-    let c = Cursor::new(Vec::new());
-    let mut writer = Writer::new(c);
-    writer.write_all(data.as_ref())?;
-    Ok(writer.into_inner()?.into_inner())
+    fn strip_impl(data: &[u8]) -> io::Result<Vec<u8>> {
+        let c = Cursor::new(Vec::new());
+        let mut writer = Writer::new(c);
+        writer.write_all(data.as_ref())?;
+        Ok(writer.into_inner()?.into_inner())
+    }
+
+    strip_impl(data.as_ref()).expect("writing to a Cursor<Vec<u8>> cannot fail")
+}
+
+/// Strip ANSI escapes from `data` and return the remaining contents as a `String`.
+///
+/// # Example
+///
+/// ```
+/// let str_with_colors = "\x1b[32mfoo\x1b[m bar";
+/// let string_without_colors = strip_ansi_escapes::strip_str(str_with_colors);
+/// assert_eq!(string_without_colors, "foo bar");
+/// ```
+pub fn strip_str<T>(data: T) -> String
+where
+    T: AsRef<str>,
+{
+    let bytes = strip(data.as_ref());
+    String::from_utf8(bytes)
+        .expect("stripping ANSI escapes from a UTF-8 string always results in UTF-8")
 }
 
 struct Performer<W>
@@ -151,44 +173,18 @@ where
     }
 }
 
+#[cfg(doctest)]
+extern crate doc_comment;
+
+#[cfg(doctest)]
+doc_comment::doctest!("../README.md", readme);
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use std::env;
-    use std::env::consts::EXE_EXTENSION;
-    use std::path::Path;
-    use std::process::Command;
-
-    #[test]
-    fn readme_test() {
-        let rustdoc = Path::new("rustdoc").with_extension(EXE_EXTENSION);
-        let readme = Path::new(file!())
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("README.md");
-        let exe = env::current_exe().unwrap();
-        let outdir = exe.parent().unwrap();
-        let mut cmd = Command::new(rustdoc);
-        cmd.args(&["--verbose", "--test", "-L"])
-            .arg(&outdir)
-            .arg(&readme);
-        println!("{:?}", cmd);
-        let result = cmd
-            .spawn()
-            .expect("Failed to spawn process")
-            .wait()
-            .expect("Failed to run process");
-        assert!(
-            result.success(),
-            "Failed to run rustdoc tests on README.md!"
-        );
-    }
-
     fn assert_parsed(input: &[u8], expected: &[u8]) {
-        let bytes = strip(input).expect("Failed to strip escapes");
+        let bytes = strip(input);
         assert_eq!(bytes, expected);
     }
 

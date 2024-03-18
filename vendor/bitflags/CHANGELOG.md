@@ -1,3 +1,39 @@
+# 2.4.2
+
+## What's Changed
+* Cargo.toml: Anchor excludes to root of the package by @jamessan in https://github.com/bitflags/bitflags/pull/387
+* Update error messages by @KodrAus in https://github.com/bitflags/bitflags/pull/390
+* Add support for impl mode structs to be repr(packed) by @GnomedDev in https://github.com/bitflags/bitflags/pull/388
+* Remove old `unused_tuple_struct_fields` lint by @dtolnay in https://github.com/bitflags/bitflags/pull/393
+* Delete use of `local_inner_macros` by @dtolnay in https://github.com/bitflags/bitflags/pull/392
+
+## New Contributors
+* @jamessan made their first contribution in https://github.com/bitflags/bitflags/pull/387
+* @GnomedDev made their first contribution in https://github.com/bitflags/bitflags/pull/388
+
+**Full Changelog**: https://github.com/bitflags/bitflags/compare/2.4.1...2.4.2
+
+# 2.4.1
+
+## What's Changed
+* Allow some new pedantic clippy lints by @KodrAus in https://github.com/bitflags/bitflags/pull/380
+
+**Full Changelog**: https://github.com/bitflags/bitflags/compare/2.4.0...2.4.1
+
+# 2.4.0
+
+## What's Changed
+* Remove html_root_url by @eldruin in https://github.com/bitflags/bitflags/pull/368
+* Support unnamed flags by @KodrAus in https://github.com/bitflags/bitflags/pull/371
+* Update smoke test to verify all Clippy and rustc lints by @MitMaro in https://github.com/bitflags/bitflags/pull/374
+* Specify the behavior of bitflags by @KodrAus in https://github.com/bitflags/bitflags/pull/369
+
+## New Contributors
+* @eldruin made their first contribution in https://github.com/bitflags/bitflags/pull/368
+* @MitMaro made their first contribution in https://github.com/bitflags/bitflags/pull/374
+
+**Full Changelog**: https://github.com/bitflags/bitflags/compare/2.3.3...2.4.0
+
 # 2.3.3
 
 ## Changes to `-=`

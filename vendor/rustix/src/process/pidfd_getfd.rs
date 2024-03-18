@@ -1,3 +1,5 @@
+//! The [`pidfd_getfd`] function and supporting types.
+
 #![allow(unsafe_code)]
 use crate::fd::OwnedFd;
 use crate::{backend, io};
@@ -15,11 +17,14 @@ bitflags::bitflags! {
     /// All flags are reserved for future use.
     #[repr(transparent)]
     #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-    pub struct PidfdGetfdFlags: backend::c::c_uint {}
+    pub struct PidfdGetfdFlags: backend::c::c_uint {
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
+    }
 }
 
 /// `syscall(SYS_pidfd_getfd, pidfd, flags)`—Obtain a duplicate of another
-/// process's file descriptor.
+/// process' file descriptor.
 ///
 /// # References
 ///  - [Linux]
@@ -35,7 +40,7 @@ bitflags::bitflags! {
 /// returned from `pidfd_getfd`.
 ///
 /// When `pidfd_getfd` is used to debug the target, or the target is not a Rust
-/// aplication, or `pidfd_getfd` is used in any other way, then extra care
+/// application, or `pidfd_getfd` is used in any other way, then extra care
 /// should be taken to avoid unexpected behaviour or crashes.
 ///
 /// For further details, see the references above.

@@ -2,16 +2,16 @@ use std::collections::HashMap;
 
 use winnow::prelude::*;
 use winnow::{
-    ascii::{alphanumeric1 as alphanumeric, escaped, float},
+    ascii::{alphanumeric1 as alphanumeric, float, take_escaped},
     combinator::alt,
     combinator::cut_err,
-    combinator::separated0,
+    combinator::separated,
     combinator::{preceded, separated_pair, terminated},
     error::ParserError,
     error::StrContext,
     stream::Offset,
     token::one_of,
-    token::{tag, take_while},
+    token::{literal, take_while},
 };
 
 use std::cell::Cell;
@@ -80,7 +80,7 @@ impl<'a, 'b: 'a> JsonValue<'a, 'b> {
         println!("array()");
 
         let mut data = self.data();
-        match tag::<_, _, ()>("[").parse_next(&mut data) {
+        match literal::<_, _, ()>("[").parse_next(&mut data) {
             Err(_) => None,
             Ok(_) => {
                 println!("[");
@@ -104,7 +104,7 @@ impl<'a, 'b: 'a> JsonValue<'a, 'b> {
                         }
                     }
 
-                    if tag::<_, _, ()>("]").parse_next(&mut data).is_ok() {
+                    if literal::<_, _, ()>("]").parse_next(&mut data).is_ok() {
                         println!("]");
                         v.offset(data);
                         done = true;
@@ -114,7 +114,7 @@ impl<'a, 'b: 'a> JsonValue<'a, 'b> {
                     if first {
                         first = false;
                     } else {
-                        match tag::<_, _, ()>(",").parse_next(&mut data) {
+                        match literal::<_, _, ()>(",").parse_next(&mut data) {
                             Ok(_) => {
                                 println!(",");
                                 v.offset(data);
@@ -137,7 +137,7 @@ impl<'a, 'b: 'a> JsonValue<'a, 'b> {
     pub fn object(&self) -> Option<impl Iterator<Item = (&'a str, JsonValue<'a, 'b>)>> {
         println!("object()");
         let mut data = self.data();
-        match tag::<_, _, ()>("{").parse_next(&mut data) {
+        match literal::<_, _, ()>("{").parse_next(&mut data) {
             Err(_) => None,
             Ok(_) => {
                 self.offset(data);
@@ -163,7 +163,7 @@ impl<'a, 'b: 'a> JsonValue<'a, 'b> {
                         }
                     }
 
-                    if tag::<_, _, ()>("}").parse_next(&mut data).is_ok() {
+                    if literal::<_, _, ()>("}").parse_next(&mut data).is_ok() {
                         println!("}}");
                         v.offset(data);
                         done = true;
@@ -173,7 +173,7 @@ impl<'a, 'b: 'a> JsonValue<'a, 'b> {
                     if first {
                         first = false;
                     } else {
-                        match tag::<_, _, ()>(",").parse_next(&mut data) {
+                        match literal::<_, _, ()>(",").parse_next(&mut data) {
                             Ok(_) => {
                                 println!(",");
                                 v.offset(data);
@@ -189,7 +189,7 @@ impl<'a, 'b: 'a> JsonValue<'a, 'b> {
                         Ok(key) => {
                             v.offset(data);
 
-                            match tag::<_, _, ()>(":").parse_next(&mut data) {
+                            match literal::<_, _, ()>(":").parse_next(&mut data) {
                                 Err(_) => None,
                                 Ok(_) => {
                                     v.offset(data);
@@ -216,7 +216,7 @@ fn sp<'a, E: ParserError<&'a str>>(i: &mut &'a str) -> PResult<&'a str, E> {
 }
 
 fn parse_str<'a, E: ParserError<&'a str>>(i: &mut &'a str) -> PResult<&'a str, E> {
-    escaped(alphanumeric, '\\', one_of(['"', 'n', '\\'])).parse_next(i)
+    take_escaped(alphanumeric, '\\', one_of(['"', 'n', '\\'])).parse_next(i)
 }
 
 fn string<'s>(i: &mut &'s str) -> PResult<&'s str> {
@@ -233,7 +233,7 @@ fn array(i: &mut &str) -> PResult<()> {
     preceded(
         '[',
         cut_err(terminated(
-            separated0(value, preceded(sp, ',')),
+            separated(0.., value, preceded(sp, ',')),
             preceded(sp, ']'),
         )),
     )
@@ -249,7 +249,7 @@ fn hash(i: &mut &str) -> PResult<()> {
     preceded(
         '{',
         cut_err(terminated(
-            separated0(key_value, preceded(sp, ',')),
+            separated(0.., key_value, preceded(sp, ',')),
             preceded(sp, '}'),
         )),
     )

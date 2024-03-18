@@ -13,11 +13,12 @@
 edition = "2021"
 rust-version = "1.64.0"
 name = "winnow"
-version = "0.5.4"
+version = "0.6.5"
 include = [
     "build.rs",
     "src/**/*",
     "Cargo.toml",
+    "Cargo.lock",
     "LICENSE*",
     "README.md",
     "benches/**/*",
@@ -83,6 +84,12 @@ replace = """
 [Unreleased]: https://github.com/winnow-rs/winnow/compare/{{tag_name}}...HEAD"""
 search = "<!-- next-url -->"
 
+[[package.metadata.release.pre-release-replacements]]
+exactly = 1
+file = "src/lib.rs"
+replace = "blob/v{{version}}/CHANGELOG.md"
+search = 'blob/v.+\..+\..+/CHANGELOG.md'
+
 [profile.bench]
 lto = true
 codegen-units = 1
@@ -141,9 +148,22 @@ required-features = ["alloc"]
 name = "arithmetic"
 path = "examples/arithmetic/bench.rs"
 harness = false
+required-features = ["alloc"]
 
 [[bench]]
 name = "contains_token"
+harness = false
+
+[[bench]]
+name = "find_slice"
+harness = false
+
+[[bench]]
+name = "iter"
+harness = false
+
+[[bench]]
+name = "next_slice"
 harness = false
 
 [[bench]]
@@ -207,6 +227,9 @@ version = "0.3.0"
 [dev-dependencies.proptest]
 version = "1.2.0"
 
+[dev-dependencies.rustc-hash]
+version = "1.1.0"
+
 [dev-dependencies.snapbox]
 version = "0.4.11"
 features = ["examples"]
@@ -232,4 +255,6 @@ unstable-doc = [
     "alloc",
     "std",
     "simd",
+    "unstable-recover",
 ]
+unstable-recover = []

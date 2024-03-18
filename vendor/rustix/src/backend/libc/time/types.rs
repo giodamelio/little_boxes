@@ -25,11 +25,12 @@ pub type Itimerspec = c::itimerspec;
 /// [`timerfd_settime`]: crate::time::timerfd_settime
 #[cfg(any(linux_kernel, target_os = "fuchsia"))]
 #[cfg(fix_y2038)]
-#[allow(missing_docs)]
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Itimerspec {
+    /// The interval of an interval timer.
     pub it_interval: Timespec,
+    /// Time remaining in the current interval.
     pub it_value: Timespec,
 }
 
@@ -82,10 +83,15 @@ bitflags! {
     #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct TimerfdFlags: u32 {
         /// `TFD_NONBLOCK`
+        #[doc(alias = "TFD_NONBLOCK")]
         const NONBLOCK = bitcast!(c::TFD_NONBLOCK);
 
         /// `TFD_CLOEXEC`
+        #[doc(alias = "TFD_CLOEXEC")]
         const CLOEXEC = bitcast!(c::TFD_CLOEXEC);
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -98,11 +104,16 @@ bitflags! {
     #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct TimerfdTimerFlags: u32 {
         /// `TFD_TIMER_ABSTIME`
+        #[doc(alias = "TFD_TIMER_ABSTIME")]
         const ABSTIME = bitcast!(c::TFD_TIMER_ABSTIME);
 
         /// `TFD_TIMER_CANCEL_ON_SET`
         #[cfg(linux_kernel)]
+        #[doc(alias = "TFD_TIMER_CANCEL_ON_SET")]
         const CANCEL_ON_SET = bitcast!(c::TFD_TIMER_CANCEL_ON_SET);
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -116,10 +127,11 @@ bitflags! {
 pub enum TimerfdClockId {
     /// `CLOCK_REALTIME`—A clock that tells the “real” time.
     ///
-    /// This is a clock that tells the amount of time elapsed since the
-    /// Unix epoch, 1970-01-01T00:00:00Z. The clock is externally settable, so
-    /// it is not monotonic. Successive reads may see decreasing times, so it
-    /// isn't reliable for measuring durations.
+    /// This is a clock that tells the amount of time elapsed since the Unix
+    /// epoch, 1970-01-01T00:00:00Z. The clock is externally settable, so it is
+    /// not monotonic. Successive reads may see decreasing times, so it isn't
+    /// reliable for measuring durations.
+    #[doc(alias = "CLOCK_REALTIME")]
     Realtime = bitcast!(c::CLOCK_REALTIME),
 
     /// `CLOCK_MONOTONIC`—A clock that tells an abstract time.
@@ -130,12 +142,14 @@ pub enum TimerfdClockId {
     ///
     /// This clock does not advance while the system is suspended; see
     /// `Boottime` for a clock that does.
+    #[doc(alias = "CLOCK_MONOTONIC")]
     Monotonic = bitcast!(c::CLOCK_MONOTONIC),
 
     /// `CLOCK_BOOTTIME`—Like `Monotonic`, but advances while suspended.
     ///
     /// This clock is similar to `Monotonic`, but does advance while the system
     /// is suspended.
+    #[doc(alias = "CLOCK_BOOTTIME")]
     Boottime = bitcast!(c::CLOCK_BOOTTIME),
 
     /// `CLOCK_REALTIME_ALARM`—Like `Realtime`, but wakes a suspended system.
@@ -143,6 +157,7 @@ pub enum TimerfdClockId {
     /// This clock is like `Realtime`, but can wake up a suspended system.
     ///
     /// Use of this clock requires the `CAP_WAKE_ALARM` Linux capability.
+    #[doc(alias = "CLOCK_REALTIME_ALARM")]
     RealtimeAlarm = bitcast!(c::CLOCK_REALTIME_ALARM),
 
     /// `CLOCK_BOOTTIME_ALARM`—Like `Boottime`, but wakes a suspended system.
@@ -150,6 +165,7 @@ pub enum TimerfdClockId {
     /// This clock is like `Boottime`, but can wake up a suspended system.
     ///
     /// Use of this clock requires the `CAP_WAKE_ALARM` Linux capability.
+    #[doc(alias = "CLOCK_BOOTTIME_ALARM")]
     BoottimeAlarm = bitcast!(c::CLOCK_BOOTTIME_ALARM),
 }
 

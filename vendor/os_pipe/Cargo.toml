@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "os_pipe"
-version = "1.1.4"
+version = "1.1.5"
 authors = ["Jack O'Connor"]
 description = "a cross-platform library for opening OS pipes"
 documentation = "https://docs.rs/os_pipe"
@@ -36,7 +36,7 @@ io_safety = []
 version = "0.2.62"
 
 [target."cfg(windows)".dependencies.windows-sys]
-version = "0.48.0"
+version = "0.52.0"
 features = [
     "Win32_Foundation",
     "Win32_System_Pipes",

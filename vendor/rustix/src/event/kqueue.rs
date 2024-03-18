@@ -13,7 +13,7 @@ use core::mem::zeroed;
 use core::ptr::slice_from_raw_parts_mut;
 use core::time::Duration;
 
-/// A `kqueue` event.
+/// A `kqueue` event for use with [`kevent`].
 #[repr(transparent)]
 #[derive(Copy, Clone)]
 pub struct Event {
@@ -73,11 +73,11 @@ impl Event {
                 flags: flags.bits() as _,
                 fflags,
                 data: {
-                    // On openbsd, data is an i64 and not an isize
+                    // On OpenBSD, data is an `i64` and not an `isize`.
                     data as _
                 },
                 udata: {
-                    // On netbsd, udata is an isize and not a pointer.
+                    // On NetBSD, udata is an `isize` and not a pointer.
                     // TODO: Strict provenance, prevent int-to-ptr cast.
                     udata as _
                 },
@@ -93,10 +93,16 @@ impl Event {
 
     /// Get the user data for this event.
     pub fn udata(&self) -> isize {
-        // On netbsd, udata is an isize and not a pointer.
+        // On NetBSD, udata is an isize and not a pointer.
         // TODO: Strict provenance, prevent ptr-to-int cast.
 
         self.inner.udata as _
+    }
+
+    /// Get the raw data for this event.
+    pub fn data(&self) -> i64 {
+        // On some BSDs, data is an `isize` and not an `i64`.
+        self.inner.data as _
     }
 
     /// Get the filter of this event.
@@ -256,6 +262,9 @@ bitflags::bitflags! {
 
         /// TODO
         const ERROR = c::EV_ERROR as _;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -284,6 +293,9 @@ bitflags::bitflags! {
 
         /// The link count of the file has changed.
         const LINK = c::NOTE_LINK;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -301,11 +313,14 @@ bitflags::bitflags! {
         /// The process executed a new process.
         const EXEC = c::NOTE_EXEC;
 
-        /// Follow the process through `fork()` calls (write only).
+        /// Follow the process through `fork` calls (write only).
         const TRACK = c::NOTE_TRACK;
 
         /// An error has occurred with following the process.
         const TRACKERR = c::NOTE_TRACKERR;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -335,6 +350,9 @@ bitflags::bitflags! {
 
         /// Trigger the event.
         const TRIGGER = c::NOTE_TRIGGER;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 

@@ -19,7 +19,9 @@ use bitflags::bitflags;
 
 use crate::backend::c::{c_int, c_uint, c_void};
 use crate::backend::prctl::syscalls;
-use crate::ffi::{CStr, CString};
+use crate::ffi::CStr;
+#[cfg(feature = "alloc")]
+use crate::ffi::CString;
 use crate::io;
 use crate::pid::Pid;
 use crate::prctl::{
@@ -61,6 +63,7 @@ pub fn set_keep_capabilities(enable: bool) -> io::Result<()> {
 // PR_GET_NAME/PR_SET_NAME
 //
 
+#[cfg(feature = "alloc")]
 const PR_GET_NAME: c_int = 16;
 
 /// Get the name of the calling thread.
@@ -70,6 +73,7 @@ const PR_GET_NAME: c_int = 16;
 ///
 /// [`prctl(PR_GET_NAME,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
+#[cfg(feature = "alloc")]
 pub fn name() -> io::Result<CString> {
     let mut buffer = [0_u8; 16];
     unsafe { prctl_2args(PR_GET_NAME, buffer.as_mut_ptr().cast())? };
@@ -81,6 +85,9 @@ pub fn name() -> io::Result<CString> {
 const PR_SET_NAME: c_int = 15;
 
 /// Set the name of the calling thread.
+///
+/// Unlike `pthread_setname_np`, this function silently truncates the name to
+/// 16 bytes, as the Linux syscall does.
 ///
 /// # References
 ///  - [`prctl(PR_SET_NAME,...)`]
@@ -134,8 +141,8 @@ impl TryFrom<i32> for SecureComputingMode {
 /// computing mode, then this call will cause a [`Signal::Kill`] signal to be
 /// sent to the process. If the caller is in filter mode, and this system call
 /// is allowed by the seccomp filters, it returns
-/// [`SecureComputingMode::Filter`]; otherwise, the process is killed with
-/// a [`Signal::Kill`] signal.
+/// [`SecureComputingMode::Filter`]; otherwise, the process is killed with a
+/// [`Signal::Kill`] signal.
 ///
 /// Since Linux 3.8, the Seccomp field of the `/proc/[pid]/status` file
 /// provides a method of obtaining the same information, without the risk that
@@ -201,8 +208,8 @@ pub enum Capability {
     /// cleared on successful return from `chown` (not implemented).
     FileSetID = linux_raw_sys::general::CAP_FSETID,
     /// Overrides the restriction that the real or effective user ID of a
-    /// process sending a signal must match the real or effective user ID
-    /// of the process receiving the signal.
+    /// process sending a signal must match the real or effective user ID of
+    /// the process receiving the signal.
     Kill = linux_raw_sys::general::CAP_KILL,
     /// Allows `setgid` manipulation. Allows `setgroups`. Allows forged gids on
     /// socket credentials passing.
@@ -362,8 +369,9 @@ pub enum Capability {
     ///
     /// [`Capability::SystemAdmin`] is required to use bpf_probe_write_user.
     ///
-    /// [`Capability::SystemAdmin`] is required to iterate system wide loaded
-    /// programs, maps, links, BTFs and convert their IDs to file descriptors.
+    /// [`Capability::SystemAdmin`] is required to iterate system-wide loaded
+    /// programs, maps, links, and BTFs, and convert their IDs to file
+    /// descriptors.
     ///
     /// [`Capability::PerformanceMonitoring`] and
     /// [`Capability::BerkeleyPacketFilters`] are required to load tracing
@@ -414,28 +422,33 @@ bitflags! {
     #[repr(transparent)]
     #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct CapabilitiesSecureBits: u32 {
-        /// If this bit is set, then the kernel does not grant capabilities when
-        /// a `set-user-ID-root` program is executed, or when a process with an effective or real
-        /// UID of 0 calls `execve`.
+        /// If this bit is set, then the kernel does not grant capabilities
+        /// when a `set-user-ID-root` program is executed, or when a process
+        /// with an effective or real UID of 0 calls `execve`.
         const NO_ROOT = 1_u32 << 0;
         /// Set [`NO_ROOT`] irreversibly.
         const NO_ROOT_LOCKED = 1_u32 << 1;
-        /// Setting this flag stops the kernel from adjusting the process's permitted, effective,
-        /// and ambient capability sets when the thread's effective and filesystem UIDs are switched
-        /// between zero and nonzero values.
+        /// Setting this flag stops the kernel from adjusting the process'
+        /// permitted, effective, and ambient capability sets when the thread's
+        /// effective and filesystem UIDs are switched between zero and nonzero
+        /// values.
         const NO_SETUID_FIXUP = 1_u32 << 2;
         /// Set [`NO_SETUID_FIXUP`] irreversibly.
         const NO_SETUID_FIXUP_LOCKED = 1_u32 << 3;
-        /// Setting this flag allows a thread that has one or more 0 UIDs to retain capabilities in
-        /// its permitted set when it switches all of its UIDs to nonzero values.
+        /// Setting this flag allows a thread that has one or more 0 UIDs to
+        /// retain capabilities in its permitted set when it switches all of
+        /// its UIDs to nonzero values.
         const KEEP_CAPS = 1_u32 << 4;
         /// Set [`KEEP_CAPS`] irreversibly.
         const KEEP_CAPS_LOCKED = 1_u32 << 5;
-        /// Setting this flag disallows raising ambient capabilities via the `prctl`'s
-        /// `PR_CAP_AMBIENT_RAISE` operation.
+        /// Setting this flag disallows raising ambient capabilities via the
+        /// `prctl`'s `PR_CAP_AMBIENT_RAISE` operation.
         const NO_CAP_AMBIENT_RAISE = 1_u32 << 6;
         /// Set [`NO_CAP_AMBIENT_RAISE`] irreversibly.
         const NO_CAP_AMBIENT_RAISE_LOCKED = 1_u32 << 7;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -733,16 +746,21 @@ const PR_MTE_TAG_SHIFT: u32 = 3;
 const PR_MTE_TAG_MASK: u32 = 0xffff_u32 << PR_MTE_TAG_SHIFT;
 
 bitflags! {
-    /// Zero means addresses that are passed for the purpose of being dereferenced by the kernel must be untagged.
+    /// Zero means addresses that are passed for the purpose of being
+    /// dereferenced by the kernel must be untagged.
     #[repr(transparent)]
     #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     pub struct TaggedAddressMode: u32 {
-        /// Addresses that are passed for the purpose of being dereferenced by the kernel may be tagged.
+        /// Addresses that are passed for the purpose of being dereferenced by
+        /// the kernel may be tagged.
         const ENABLED = 1_u32 << 0;
         /// Synchronous tag check fault mode.
         const TCF_SYNC = 1_u32 << 1;
         /// Asynchronous tag check fault mode.
         const TCF_ASYNC = 1_u32 << 2;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -769,8 +787,8 @@ const PR_SET_TAGGED_ADDR_CTRL: c_int = 55;
 ///
 /// # Safety
 ///
-/// Please ensure the conditions necessary to safely call this function,
-/// as detailed in the references above.
+/// Please ensure the conditions necessary to safely call this function, as
+/// detailed in the references above.
 ///
 /// [`prctl(PR_SET_TAGGED_ADDR_CTRL,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
@@ -798,8 +816,8 @@ const PR_SYS_DISPATCH_OFF: usize = 0;
 ///
 /// # Safety
 ///
-/// Please ensure the conditions necessary to safely call this function,
-/// as detailed in the references above.
+/// Please ensure the conditions necessary to safely call this function, as
+/// detailed in the references above.
 ///
 /// [`prctl(PR_SET_SYSCALL_USER_DISPATCH,PR_SYS_DISPATCH_OFF,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]
@@ -844,8 +862,8 @@ impl TryFrom<u8> for SysCallUserDispatchFastSwitch {
 ///
 /// # Safety
 ///
-/// Please ensure the conditions necessary to safely call this function,
-/// as detailed in the references above.
+/// Please ensure the conditions necessary to safely call this function, as
+/// detailed in the references above.
 ///
 /// [`prctl(PR_SET_SYSCALL_USER_DISPATCH,PR_SYS_DISPATCH_ON,...)`]: https://man7.org/linux/man-pages/man2/prctl.2.html
 #[inline]

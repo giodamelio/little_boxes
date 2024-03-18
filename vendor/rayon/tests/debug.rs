@@ -104,8 +104,10 @@ fn debug_str() {
     check(s.par_chars());
     check(s.par_lines());
     check(s.par_split('\n'));
+    check(s.par_split_inclusive('\n'));
     check(s.par_split_terminator('\n'));
     check(s.par_split_whitespace());
+    check(s.par_split_ascii_whitespace());
 }
 
 #[test]
@@ -129,7 +131,9 @@ fn debug_vec() {
     check(v.par_rchunks_exact_mut(42));
     check(v.par_windows(42));
     check(v.par_split(|x| x % 3 == 0));
+    check(v.par_split_inclusive(|x| x % 3 == 0));
     check(v.par_split_mut(|x| x % 3 == 0));
+    check(v.par_split_inclusive_mut(|x| x % 3 == 0));
     check(v.par_drain(..));
     check(v.into_par_iter());
 }
@@ -143,6 +147,8 @@ fn debug_array() {
 #[test]
 fn debug_adaptors() {
     let v: Vec<_> = (0..10).collect();
+    check(v.par_iter().by_exponential_blocks());
+    check(v.par_iter().by_uniform_blocks(5));
     check(v.par_iter().chain(&v));
     check(v.par_iter().cloned());
     check(v.par_iter().copied());

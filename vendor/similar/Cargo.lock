@@ -209,7 +209,7 @@ checksum = "2e24979f63a11545f5f2c60141afe249d4f19f84581ea2138065e400941d83d3"
 
 [[package]]
 name = "similar"
-version = "2.2.1"
+version = "2.4.0"
 dependencies = [
  "bstr",
  "console",

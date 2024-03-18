@@ -608,11 +608,44 @@ impl NamedTempFile<File> {
 
     /// Create a new named temporary file in the specified directory.
     ///
+    /// This is equivalent to:
+    ///
+    /// ```ignore
+    /// Builder::new().tempfile_in(dir)
+    /// ```
+    ///
     /// See [`NamedTempFile::new()`] for details.
     ///
     /// [`NamedTempFile::new()`]: #method.new
     pub fn new_in<P: AsRef<Path>>(dir: P) -> io::Result<NamedTempFile> {
         Builder::new().tempfile_in(dir)
+    }
+
+    /// Create a new named temporary file with the specified filename prefix.
+    ///
+    /// See [`NamedTempFile::new()`] for details.
+    ///
+    /// [`NamedTempFile::new()`]: #method.new
+    pub fn with_prefix<S: AsRef<OsStr>>(prefix: S) -> io::Result<NamedTempFile> {
+        Builder::new().prefix(&prefix).tempfile()
+    }
+    /// Create a new named temporary file with the specified filename prefix,
+    /// in the specified directory.
+    ///
+    /// This is equivalent to:
+    ///
+    /// ```ignore
+    /// Builder::new().prefix(&prefix).tempfile_in(directory)
+    /// ```
+    ///
+    /// See [`NamedTempFile::new()`] for details.
+    ///
+    /// [`NamedTempFile::new()`]: #method.new
+    pub fn with_prefix_in<S: AsRef<OsStr>, P: AsRef<Path>>(
+        prefix: S,
+        dir: P,
+    ) -> io::Result<NamedTempFile> {
+        Builder::new().prefix(&prefix).tempfile_in(dir)
     }
 }
 
@@ -698,7 +731,7 @@ impl<F> NamedTempFile<F> {
     /// # Security
     ///
     /// This method persists the temporary file using its path and may not be
-    /// secure in the in all cases. Please read the security section on the top
+    /// secure in all cases. Please read the security section on the top
     /// level documentation of this type for details.
     ///
     /// # Errors
@@ -752,7 +785,7 @@ impl<F> NamedTempFile<F> {
     /// # Security
     ///
     /// This method persists the temporary file using its path and may not be
-    /// secure in the in all cases. Please read the security section on the top
+    /// secure in all cases. Please read the security section on the top
     /// level documentation of this type for details.
     ///
     /// # Errors
@@ -1074,13 +1107,14 @@ impl<F: AsRawHandle> AsRawHandle for NamedTempFile<F> {
 pub(crate) fn create_named(
     mut path: PathBuf,
     open_options: &mut OpenOptions,
+    permissions: Option<&std::fs::Permissions>,
 ) -> io::Result<NamedTempFile> {
     // Make the path absolute. Otherwise, changing directories could cause us to
     // delete the wrong file.
     if !path.is_absolute() {
         path = env::current_dir()?.join(path)
     }
-    imp::create_named(&path, open_options)
+    imp::create_named(&path, open_options, permissions)
         .with_err_path(|| path.clone())
         .map(|file| NamedTempFile {
             path: TempPath {

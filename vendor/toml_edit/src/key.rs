@@ -1,9 +1,6 @@
 use std::borrow::Cow;
 use std::str::FromStr;
 
-use crate::encode::{to_string_repr, StringStyle};
-use crate::parser;
-use crate::parser::key::is_unquoted_char;
 use crate::repr::{Decor, Repr};
 use crate::InternalString;
 
@@ -33,7 +30,8 @@ use crate::InternalString;
 pub struct Key {
     key: InternalString,
     pub(crate) repr: Option<Repr>,
-    pub(crate) decor: Decor,
+    pub(crate) leaf_decor: Decor,
+    pub(crate) dotted_decor: Decor,
 }
 
 impl Key {
@@ -42,13 +40,15 @@ impl Key {
         Self {
             key: key.into(),
             repr: None,
-            decor: Default::default(),
+            leaf_decor: Default::default(),
+            dotted_decor: Default::default(),
         }
     }
 
     /// Parse a TOML key expression
     ///
     /// Unlike `"".parse<Key>()`, this supports dotted keys.
+    #[cfg(feature = "parse")]
     pub fn parse(repr: &str) -> Result<Vec<Self>, crate::TomlError> {
         Self::try_parse_path(repr)
     }
@@ -59,8 +59,20 @@ impl Key {
     }
 
     /// While creating the `Key`, add `Decor` to it
-    pub fn with_decor(mut self, decor: Decor) -> Self {
-        self.decor = decor;
+    #[deprecated(since = "0.21.1", note = "Replaced with `with_leaf_decor`")]
+    pub fn with_decor(self, decor: Decor) -> Self {
+        self.with_leaf_decor(decor)
+    }
+
+    /// While creating the `Key`, add `Decor` to it for the line entry
+    pub fn with_leaf_decor(mut self, decor: Decor) -> Self {
+        self.leaf_decor = decor;
+        self
+    }
+
+    /// While creating the `Key`, add `Decor` to it for between dots
+    pub fn with_dotted_decor(mut self, decor: Decor) -> Self {
+        self.dotted_decor = decor;
         self
     }
 
@@ -84,11 +96,13 @@ impl Key {
     }
 
     /// Returns the default raw representation.
+    #[cfg(feature = "display")]
     pub fn default_repr(&self) -> Repr {
         to_key_repr(&self.key)
     }
 
     /// Returns a raw representation.
+    #[cfg(feature = "display")]
     pub fn display_repr(&self) -> Cow<'_, str> {
         self.as_repr()
             .and_then(|r| r.as_raw().as_str())
@@ -99,13 +113,38 @@ impl Key {
     }
 
     /// Returns the surrounding whitespace
+    #[deprecated(
+        since = "0.21.1",
+        note = "Replaced with `dotted_decor_mut`, `leaf_decor_mut"
+    )]
     pub fn decor_mut(&mut self) -> &mut Decor {
-        &mut self.decor
+        self.leaf_decor_mut()
+    }
+
+    /// Returns the surrounding whitespace for the line entry
+    pub fn leaf_decor_mut(&mut self) -> &mut Decor {
+        &mut self.leaf_decor
+    }
+
+    /// Returns the surrounding whitespace for between dots
+    pub fn dotted_decor_mut(&mut self) -> &mut Decor {
+        &mut self.dotted_decor
     }
 
     /// Returns the surrounding whitespace
+    #[deprecated(since = "0.21.1", note = "Replaced with `dotted_decor`, `leaf_decor")]
     pub fn decor(&self) -> &Decor {
-        &self.decor
+        self.leaf_decor()
+    }
+
+    /// Returns the surrounding whitespace for the line entry
+    pub fn leaf_decor(&self) -> &Decor {
+        &self.leaf_decor
+    }
+
+    /// Returns the surrounding whitespace for between dots
+    pub fn dotted_decor(&self) -> &Decor {
+        &self.dotted_decor
     }
 
     /// Returns the location within the original document
@@ -115,7 +154,8 @@ impl Key {
     }
 
     pub(crate) fn despan(&mut self, input: &str) {
-        self.decor.despan(input);
+        self.leaf_decor.despan(input);
+        self.dotted_decor.despan(input);
         if let Some(repr) = &mut self.repr {
             repr.despan(input)
         }
@@ -123,18 +163,21 @@ impl Key {
 
     /// Auto formats the key.
     pub fn fmt(&mut self) {
-        self.repr = Some(to_key_repr(&self.key));
-        self.decor.clear();
+        self.repr = None;
+        self.leaf_decor.clear();
+        self.dotted_decor.clear();
     }
 
+    #[cfg(feature = "parse")]
     fn try_parse_simple(s: &str) -> Result<Key, crate::TomlError> {
-        let mut key = parser::parse_key(s)?;
+        let mut key = crate::parser::parse_key(s)?;
         key.despan(s);
         Ok(key)
     }
 
+    #[cfg(feature = "parse")]
     fn try_parse_path(s: &str) -> Result<Vec<Key>, crate::TomlError> {
-        let mut keys = parser::parse_key_path(s)?;
+        let mut keys = crate::parser::parse_key_path(s)?;
         for key in &mut keys {
             key.despan(s);
         }
@@ -148,7 +191,8 @@ impl Clone for Key {
         Self {
             key: self.key.clone(),
             repr: self.repr.clone(),
-            decor: self.decor.clone(),
+            leaf_decor: self.leaf_decor.clone(),
+            dotted_decor: self.dotted_decor.clone(),
         }
     }
 }
@@ -209,12 +253,14 @@ impl PartialEq<String> for Key {
     }
 }
 
+#[cfg(feature = "display")]
 impl std::fmt::Display for Key {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        crate::encode::Encode::encode(self, f, None, ("", ""))
+        crate::encode::encode_key(self, f, None)
     }
 }
 
+#[cfg(feature = "parse")]
 impl FromStr for Key {
     type Err = crate::TomlError;
 
@@ -226,11 +272,33 @@ impl FromStr for Key {
     }
 }
 
+#[cfg(feature = "display")]
 fn to_key_repr(key: &str) -> Repr {
-    if key.as_bytes().iter().copied().all(is_unquoted_char) && !key.is_empty() {
-        Repr::new_unchecked(key)
-    } else {
-        to_string_repr(key, Some(StringStyle::OnelineSingle), Some(false))
+    #[cfg(feature = "parse")]
+    {
+        if key
+            .as_bytes()
+            .iter()
+            .copied()
+            .all(crate::parser::key::is_unquoted_char)
+            && !key.is_empty()
+        {
+            Repr::new_unchecked(key)
+        } else {
+            crate::encode::to_string_repr(
+                key,
+                Some(crate::encode::StringStyle::OnelineSingle),
+                Some(false),
+            )
+        }
+    }
+    #[cfg(not(feature = "parse"))]
+    {
+        crate::encode::to_string_repr(
+            key,
+            Some(crate::encode::StringStyle::OnelineSingle),
+            Some(false),
+        )
     }
 }
 
@@ -265,7 +333,7 @@ impl From<Key> for InternalString {
     }
 }
 
-/// A mutable reference to a `Key`
+/// A mutable reference to a `Key`'s formatting
 #[derive(Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct KeyMut<'k> {
     key: &'k mut Key,
@@ -283,23 +351,52 @@ impl<'k> KeyMut<'k> {
     }
 
     /// Returns the default raw representation.
+    #[cfg(feature = "display")]
     pub fn default_repr(&self) -> Repr {
         self.key.default_repr()
     }
 
     /// Returns a raw representation.
+    #[cfg(feature = "display")]
     pub fn display_repr(&self) -> Cow<str> {
         self.key.display_repr()
     }
 
     /// Returns the surrounding whitespace
+    #[deprecated(
+        since = "0.21.1",
+        note = "Replaced with `dotted_decor_mut`, `leaf_decor_mut"
+    )]
     pub fn decor_mut(&mut self) -> &mut Decor {
+        #![allow(deprecated)]
         self.key.decor_mut()
     }
 
+    /// Returns the surrounding whitespace for the line entry
+    pub fn leaf_decor_mut(&mut self) -> &mut Decor {
+        self.key.leaf_decor_mut()
+    }
+
+    /// Returns the surrounding whitespace for between dots
+    pub fn dotted_decor_mut(&mut self) -> &mut Decor {
+        self.key.dotted_decor_mut()
+    }
+
     /// Returns the surrounding whitespace
+    #[deprecated(since = "0.21.1", note = "Replaced with `dotted_decor`, `leaf_decor")]
     pub fn decor(&self) -> &Decor {
+        #![allow(deprecated)]
         self.key.decor()
+    }
+
+    /// Returns the surrounding whitespace for the line entry
+    pub fn leaf_decor(&self) -> &Decor {
+        self.key.leaf_decor()
+    }
+
+    /// Returns the surrounding whitespace for between dots
+    pub fn dotted_decor(&self) -> &Decor {
+        self.key.dotted_decor()
     }
 
     /// Auto formats the key.
@@ -337,8 +434,16 @@ impl<'s> PartialEq<String> for KeyMut<'s> {
     }
 }
 
+#[cfg(feature = "display")]
 impl<'k> std::fmt::Display for KeyMut<'k> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self.key, f)
     }
+}
+
+#[test]
+#[cfg(feature = "parse")]
+#[cfg(feature = "display")]
+fn string_roundtrip() {
+    Key::new("hello").to_string().parse::<Key>().unwrap();
 }

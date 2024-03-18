@@ -393,9 +393,11 @@ impl<'cmd, 'writer> HelpTemplate<'cmd, 'writer> {
             .filter_map(|arg| arg.get_help_heading())
             .collect::<FlatSet<_>>();
 
+        let flatten = self.cmd.is_flatten_help_set();
+
         let mut first = true;
 
-        if subcmds {
+        if subcmds && !flatten {
             if !first {
                 self.writer.push_str("\n\n");
             }
@@ -473,6 +475,11 @@ impl<'cmd, 'writer> HelpTemplate<'cmd, 'writer> {
                     self.write_args(&args, heading, option_sort_key);
                 }
             }
+        }
+        if subcmds && flatten {
+            let mut cmd = self.cmd.clone();
+            cmd.build();
+            self.write_flat_subcommands(&cmd, &mut first);
         }
     }
 
@@ -677,57 +684,56 @@ impl<'cmd, 'writer> HelpTemplate<'cmd, 'writer> {
         let help_is_empty = help.is_empty();
         self.writer.push_styled(&help);
         if let Some(arg) = arg {
-            const DASH_SPACE: usize = "- ".len();
-            let possible_vals = arg.get_possible_values();
-            if !possible_vals.is_empty()
-                && !arg.is_hide_possible_values_set()
-                && self.use_long_pv(arg)
-            {
-                debug!("HelpTemplate::help: Found possible vals...{possible_vals:?}");
-                let longest = possible_vals
-                    .iter()
-                    .filter(|f| !f.is_hide_set())
-                    .map(|f| display_width(f.get_name()))
-                    .max()
-                    .expect("Only called with possible value");
+            if !arg.is_hide_possible_values_set() && self.use_long_pv(arg) {
+                const DASH_SPACE: usize = "- ".len();
+                let possible_vals = arg.get_possible_values();
+                if !possible_vals.is_empty() {
+                    debug!("HelpTemplate::help: Found possible vals...{possible_vals:?}");
+                    let longest = possible_vals
+                        .iter()
+                        .filter(|f| !f.is_hide_set())
+                        .map(|f| display_width(f.get_name()))
+                        .max()
+                        .expect("Only called with possible value");
 
-                let spaces = spaces + TAB_WIDTH - DASH_SPACE;
-                let trailing_indent = spaces + DASH_SPACE;
-                let trailing_indent = self.get_spaces(trailing_indent);
+                    let spaces = spaces + TAB_WIDTH - DASH_SPACE;
+                    let trailing_indent = spaces + DASH_SPACE;
+                    let trailing_indent = self.get_spaces(trailing_indent);
 
-                if !help_is_empty {
-                    let _ = write!(self.writer, "\n\n{:spaces$}", "");
-                }
-                self.writer.push_str("Possible values:");
-                for pv in possible_vals.iter().filter(|pv| !pv.is_hide_set()) {
-                    let name = pv.get_name();
-
-                    let mut descr = StyledStr::new();
-                    let _ = write!(
-                        &mut descr,
-                        "{}{name}{}",
-                        literal.render(),
-                        literal.render_reset()
-                    );
-                    if let Some(help) = pv.get_help() {
-                        debug!("HelpTemplate::help: Possible Value help");
-                        // To align help messages
-                        let padding = longest - display_width(name);
-                        let _ = write!(&mut descr, ": {:padding$}", "");
-                        descr.push_styled(help);
+                    if !help_is_empty {
+                        let _ = write!(self.writer, "\n\n{:spaces$}", "");
                     }
+                    self.writer.push_str("Possible values:");
+                    for pv in possible_vals.iter().filter(|pv| !pv.is_hide_set()) {
+                        let name = pv.get_name();
 
-                    let avail_chars = if self.term_w > trailing_indent.len() {
-                        self.term_w - trailing_indent.len()
-                    } else {
-                        usize::MAX
-                    };
-                    descr.replace_newline_var();
-                    descr.wrap(avail_chars);
-                    descr.indent("", &trailing_indent);
+                        let mut descr = StyledStr::new();
+                        let _ = write!(
+                            &mut descr,
+                            "{}{name}{}",
+                            literal.render(),
+                            literal.render_reset()
+                        );
+                        if let Some(help) = pv.get_help() {
+                            debug!("HelpTemplate::help: Possible Value help");
+                            // To align help messages
+                            let padding = longest - display_width(name);
+                            let _ = write!(&mut descr, ": {:padding$}", "");
+                            descr.push_styled(help);
+                        }
 
-                    let _ = write!(self.writer, "\n{:spaces$}- ", "",);
-                    self.writer.push_styled(&descr);
+                        let avail_chars = if self.term_w > trailing_indent.len() {
+                            self.term_w - trailing_indent.len()
+                        } else {
+                            usize::MAX
+                        };
+                        descr.replace_newline_var();
+                        descr.wrap(avail_chars);
+                        descr.indent("", &trailing_indent);
+
+                        let _ = write!(self.writer, "\n{:spaces$}- ", "",);
+                        self.writer.push_styled(&descr);
+                    }
                 }
             }
         }
@@ -837,17 +843,19 @@ impl<'cmd, 'writer> HelpTemplate<'cmd, 'writer> {
             spec_vals.push(format!("[short aliases: {als}]"));
         }
 
-        let possible_vals = a.get_possible_values();
-        if !possible_vals.is_empty() && !a.is_hide_possible_values_set() && !self.use_long_pv(a) {
-            debug!("HelpTemplate::spec_vals: Found possible vals...{possible_vals:?}");
+        if !a.is_hide_possible_values_set() && !self.use_long_pv(a) {
+            let possible_vals = a.get_possible_values();
+            if !possible_vals.is_empty() {
+                debug!("HelpTemplate::spec_vals: Found possible vals...{possible_vals:?}");
 
-            let pvs = possible_vals
-                .iter()
-                .filter_map(PossibleValue::get_visible_quoted_name)
-                .collect::<Vec<_>>()
-                .join(", ");
+                let pvs = possible_vals
+                    .iter()
+                    .filter_map(PossibleValue::get_visible_quoted_name)
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
-            spec_vals.push(format!("[possible values: {pvs}]"));
+                spec_vals.push(format!("[possible values: {pvs}]"));
+            }
         }
         let connector = if self.use_long { "\n" } else { " " };
         spec_vals.join(connector)
@@ -873,6 +881,70 @@ impl<'cmd, 'writer> HelpTemplate<'cmd, 'writer> {
 
 /// Subcommand handling
 impl<'cmd, 'writer> HelpTemplate<'cmd, 'writer> {
+    /// Writes help for subcommands of a Parser Object to the wrapped stream.
+    fn write_flat_subcommands(&mut self, cmd: &Command, first: &mut bool) {
+        debug!(
+            "HelpTemplate::write_flat_subcommands, cmd={}, first={}",
+            cmd.get_name(),
+            *first
+        );
+        use std::fmt::Write as _;
+        let header = &self.styles.get_header();
+
+        let mut ord_v = Vec::new();
+        for subcommand in cmd
+            .get_subcommands()
+            .filter(|subcommand| should_show_subcommand(subcommand))
+        {
+            ord_v.push((
+                subcommand.get_display_order(),
+                subcommand.get_name(),
+                subcommand,
+            ));
+        }
+        ord_v.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+        for (_, _, subcommand) in ord_v {
+            if !*first {
+                self.writer.push_str("\n\n");
+            }
+            *first = false;
+
+            let heading = subcommand.get_usage_name_fallback();
+            let about = subcommand
+                .get_about()
+                .or_else(|| subcommand.get_long_about())
+                .unwrap_or_default();
+
+            let _ = write!(
+                self.writer,
+                "{}{heading}:{}\n",
+                header.render(),
+                header.render_reset()
+            );
+            if !about.is_empty() {
+                let _ = write!(self.writer, "{about}\n",);
+            }
+
+            let mut sub_help = HelpTemplate {
+                writer: self.writer,
+                cmd: subcommand,
+                styles: self.styles,
+                usage: self.usage,
+                next_line_help: self.next_line_help,
+                term_w: self.term_w,
+                use_long: self.use_long,
+            };
+            let args = subcommand
+                .get_arguments()
+                .filter(|arg| should_show_arg(self.use_long, arg) && !arg.is_global_set())
+                .collect::<Vec<_>>();
+            sub_help.write_args(&args, heading, option_sort_key);
+            if subcommand.is_flatten_help_set() {
+                sub_help.write_flat_subcommands(subcommand, first);
+            }
+        }
+    }
+
     /// Writes help for subcommands of a Parser Object to the wrapped stream.
     fn write_subcommands(&mut self, cmd: &Command) {
         debug!("HelpTemplate::write_subcommands");

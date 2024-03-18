@@ -17,6 +17,9 @@ bitflags! {
         const CLOEXEC = linux_raw_sys::general::IN_CLOEXEC;
         /// `IN_NONBLOCK`
         const NONBLOCK = linux_raw_sys::general::IN_NONBLOCK;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -35,7 +38,7 @@ bitflags! {
         const CLOSE_NOWRITE = linux_raw_sys::general::IN_CLOSE_NOWRITE;
         /// `IN_CLOSE_WRITE`
         const CLOSE_WRITE = linux_raw_sys::general::IN_CLOSE_WRITE;
-        /// `IN_CREATE `
+        /// `IN_CREATE`
         const CREATE = linux_raw_sys::general::IN_CREATE;
         /// `IN_DELETE`
         const DELETE = linux_raw_sys::general::IN_DELETE;
@@ -71,6 +74,9 @@ bitflags! {
         const ONESHOT = linux_raw_sys::general::IN_ONESHOT;
         /// `IN_ONLYDIR`
         const ONLYDIR = linux_raw_sys::general::IN_ONLYDIR;
+
+        /// <https://docs.rs/bitflags/*/bitflags/#externally-defined-flags>
+        const _ = !0;
     }
 }
 
@@ -86,27 +92,25 @@ pub fn inotify_init(flags: CreateFlags) -> io::Result<OwnedFd> {
 
 /// `inotify_add_watch(self, path, flags)`—Adds a watch to inotify.
 ///
-/// This registers or updates a watch for the filesystem path `path`
-/// and returns a watch descriptor corresponding to this watch.
+/// This registers or updates a watch for the filesystem path `path` and
+/// returns a watch descriptor corresponding to this watch.
 ///
-/// Note: Due to the existence of hardlinks, providing two
-/// different paths to this method may result in it returning
-/// the same watch descriptor. An application should keep track of this
-/// externally to avoid logic errors.
+/// Note: Due to the existence of hardlinks, providing two different paths to
+/// this method may result in it returning the same watch descriptor. An
+/// application should keep track of this externally to avoid logic errors.
 #[inline]
 pub fn inotify_add_watch<P: crate::path::Arg>(
     inot: BorrowedFd<'_>,
     path: P,
     flags: WatchFlags,
 ) -> io::Result<i32> {
-    let path = path.as_cow_c_str().unwrap();
-    syscalls::inotify_add_watch(inot, &path, flags)
+    path.into_with_c_str(|path| syscalls::inotify_add_watch(inot, path, flags))
 }
 
-/// `inotify_rm_watch(self, wd)`—Removes a watch from this inotify
+/// `inotify_rm_watch(self, wd)`—Removes a watch from this inotify.
 ///
-/// The watch descriptor provided should have previously been returned
-/// by [`inotify_add_watch`] and not previously have been removed.
+/// The watch descriptor provided should have previously been returned by
+/// [`inotify_add_watch`] and not previously have been removed.
 #[doc(alias = "inotify_rm_watch")]
 #[inline]
 pub fn inotify_remove_watch(inot: BorrowedFd<'_>, wd: i32) -> io::Result<()> {

@@ -149,8 +149,8 @@ impl<'diff, 'old, 'new, 'bufs, T: DiffableStr + ?Sized> UnifiedDiff<'diff, 'old,
     ///
     /// `a` and `b` are the file names that are added to the top of the unified
     /// file format.  The names are accepted verbatim which lets you encode
-    /// a timestamp into it when separated by a tab (`\t`).  For more information
-    /// see [the unified diff format specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/diff.html#tag_20_34_10_07)
+    /// a timestamp into it when separated by a tab (`\t`).  For more information,
+    /// see [the unified diff format specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/diff.html#tag_20_34_10_07).
     pub fn header(&mut self, a: &str, b: &str) -> &mut Self {
         self.header = Some((a.to_string(), b.to_string()));
         self
@@ -317,10 +317,10 @@ where
 ///
 /// `n` configures [`UnifiedDiff::context_radius`] and
 /// `header` configures [`UnifiedDiff::header`] when not `None`.
-pub fn unified_diff<'old, 'new>(
+pub fn unified_diff(
     alg: Algorithm,
-    old: &'old str,
-    new: &'new str,
+    old: &str,
+    new: &str,
     n: usize,
     header: Option<(&str, &str)>,
 ) -> String {

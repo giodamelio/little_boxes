@@ -1,6 +1,6 @@
 //! The following is derived from Rust's
 //! library/std/src/os/fd/owned.rs at revision
-//! fa68e73e9947be8ffc5b3b46d899e4953a44e7e9.
+//! 334a54cd83191f38ad8046ed94c45de735c86c65.
 //!
 //! All code in this file is licensed MIT or Apache 2.0 at your option.
 //!
@@ -18,8 +18,9 @@ use core::mem::forget;
 
 /// A borrowed file descriptor.
 ///
-/// This has a lifetime parameter to tie it to the lifetime of something that
-/// owns the file descriptor.
+/// This has a lifetime parameter to tie it to the lifetime of something that owns the file
+/// descriptor. For the duration of that lifetime, it is guaranteed that nobody will close the file
+/// descriptor.
 ///
 /// This uses `repr(transparent)` and has the representation of a host file
 /// descriptor, so it can be used in FFI in places where a file descriptor is
@@ -36,8 +37,8 @@ use core::mem::forget;
 // 32-bit c_int. Below is -2, in two's complement, but that only works out
 // because c_int is 32 bits.
 #[cfg_attr(rustc_attrs, rustc_layout_scalar_valid_range_end(0xFF_FF_FF_FE))]
-#[cfg_attr(staged_api, unstable(feature = "io_safety", issue = "87074"))]
 #[cfg_attr(rustc_attrs, rustc_nonnull_optimization_guaranteed)]
+#[cfg_attr(staged_api, stable(feature = "io_safety", since = "1.63.0"))]
 pub struct BorrowedFd<'fd> {
     fd: RawFd,
     _phantom: PhantomData<&'fd OwnedFd>,
@@ -45,7 +46,8 @@ pub struct BorrowedFd<'fd> {
 
 /// An owned file descriptor.
 ///
-/// This closes the file descriptor on drop.
+/// This closes the file descriptor on drop. It is guaranteed that nobody else will close the file
+/// descriptor.
 ///
 /// This uses `repr(transparent)` and has the representation of a host file
 /// descriptor, so it can be used in FFI in places where a file descriptor is
@@ -71,7 +73,11 @@ impl BorrowedFd<'_> {
     /// The resource pointed to by `fd` must remain open for the duration of
     /// the returned `BorrowedFd`, and it must not have the value `-1`.
     #[inline]
-    #[cfg_attr(staged_api, unstable(feature = "io_safety", issue = "87074"))]
+    #[cfg_attr(
+        staged_api,
+        rustc_const_stable(feature = "io_safety", since = "1.63.0")
+    )]
+    #[cfg_attr(staged_api, stable(feature = "io_safety", since = "1.63.0"))]
     pub const unsafe fn borrow_raw(fd: RawFd) -> Self {
         assert!(fd != u32::MAX as RawFd);
         // SAFETY: we just asserted that the value is in the valid range and isn't `-1` (the only value bigger than `0xFF_FF_FF_FE` unsigned)
@@ -106,12 +112,44 @@ impl OwnedFd {
         Ok(fd.into())
     }
 
+    /// Creates a new `OwnedFd` instance that shares the same underlying file handle
+    /// as the existing `OwnedFd` instance.
     #[cfg(target_arch = "wasm32")]
     pub fn try_clone(&self) -> crate::io::Result<Self> {
-        Err(crate::io::const_io_error!(
-            crate::io::ErrorKind::Unsupported,
-            "operation not supported on WASI yet",
-        ))
+        Err(crate::io::Errno::NOSYS)
+    }
+}
+
+impl BorrowedFd<'_> {
+    /// Creates a new `OwnedFd` instance that shares the same underlying file
+    /// description as the existing `BorrowedFd` instance.
+    #[cfg(not(any(target_arch = "wasm32", target_os = "hermit")))]
+    #[cfg_attr(staged_api, stable(feature = "io_safety", since = "1.63.0"))]
+    pub fn try_clone_to_owned(&self) -> crate::io::Result<OwnedFd> {
+        // Avoid using file descriptors below 3 as they are used for stdio
+
+        // We want to atomically duplicate this file descriptor and set the
+        // CLOEXEC flag, and currently that's done via F_DUPFD_CLOEXEC. This
+        // is a POSIX flag that was added to Linux in 2.6.24.
+        #[cfg(not(target_os = "espidf"))]
+        let fd = crate::io::fcntl_dupfd_cloexec(self, 3)?;
+
+        // For ESP-IDF, F_DUPFD is used instead, because the CLOEXEC semantics
+        // will never be supported, as this is a bare metal framework with
+        // no capabilities for multi-process execution. While F_DUPFD is also
+        // not supported yet, it might be (currently it returns ENOSYS).
+        #[cfg(target_os = "espidf")]
+        let fd = crate::io::fcntl_dupfd(self, 3)?;
+
+        Ok(fd)
+    }
+
+    /// Creates a new `OwnedFd` instance that shares the same underlying file
+    /// description as the existing `BorrowedFd` instance.
+    #[cfg(any(target_arch = "wasm32", target_os = "hermit"))]
+    #[cfg_attr(staged_api, stable(feature = "io_safety", since = "1.63.0"))]
+    pub fn try_clone_to_owned(&self) -> crate::io::Result<OwnedFd> {
+        Err(crate::io::Errno::NOSYS)
     }
 }
 
@@ -148,7 +186,9 @@ impl FromRawFd for OwnedFd {
     /// # Safety
     ///
     /// The resource pointed to by `fd` must be open and suitable for assuming
-    /// ownership. The resource must not require any cleanup other than `close`.
+    /// [ownership][io-safety]. The resource must not require any cleanup other than `close`.
+    ///
+    /// [io-safety]: io#io-safety
     #[inline]
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         assert_ne!(fd, u32::MAX as RawFd);

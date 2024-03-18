@@ -27,7 +27,10 @@ impl Man {
     /// Create a new manual page.
     pub fn new(mut cmd: clap::Command) -> Self {
         cmd.build();
-        let title = cmd.get_name().to_owned();
+        let title = cmd
+            .get_display_name()
+            .unwrap_or_else(|| cmd.get_name())
+            .to_owned();
         let section = "1".to_owned();
         let date = "".to_owned();
         let source = format!(
@@ -90,6 +93,51 @@ impl Man {
         self.manual = manual.into();
         self
     }
+}
+
+/// Handle [`Man`] in relation to files
+impl Man {
+    /// Generate the filename of the manual page
+    #[must_use]
+    pub fn get_filename(&self) -> String {
+        format!(
+            "{}.{}",
+            self.cmd
+                .get_display_name()
+                .unwrap_or_else(|| self.cmd.get_name()),
+            self.section
+        )
+    }
+
+    /// [Renders](Man::render) the manual page and writes it to a file
+    pub fn generate_to(
+        &self,
+        out_dir: impl AsRef<std::path::Path>,
+    ) -> Result<std::path::PathBuf, std::io::Error> {
+        let filepath = out_dir.as_ref().join(self.get_filename());
+        let mut file = std::fs::File::create(&filepath)?;
+        self.render(&mut file)?;
+        file.flush()?;
+        Ok(filepath)
+    }
+}
+
+/// Generate manual page files for the command with all subcommands
+pub fn generate_to(
+    cmd: clap::Command,
+    out_dir: impl AsRef<std::path::Path>,
+) -> Result<(), std::io::Error> {
+    fn generate(cmd: clap::Command, out_dir: &std::path::Path) -> Result<(), std::io::Error> {
+        for cmd in cmd.get_subcommands().cloned() {
+            generate(cmd, out_dir)?;
+        }
+        Man::new(cmd).generate_to(out_dir)?;
+        Ok(())
+    }
+
+    let mut cmd = cmd.disable_help_subcommand(true);
+    cmd.build();
+    generate(cmd, out_dir.as_ref())
 }
 
 /// Generate ROFF output

@@ -13,7 +13,7 @@
 edition = "2018"
 rust-version = "1.41"
 name = "similar"
-version = "2.2.1"
+version = "2.4.0"
 authors = [
     "Armin Ronacher <armin.ronacher@active-4.com>",
     "Pierre-Étienne Meunier <pe@pijul.org>",
@@ -36,7 +36,7 @@ repository = "https://github.com/mitsuhiko/similar"
 all-features = true
 
 [profile.release]
-debug = true
+debug = 2
 
 [[example]]
 name = "patience"

@@ -6,9 +6,20 @@ bitflags
 [![Documentation](https://docs.rs/bitflags/badge.svg)](https://docs.rs/bitflags)
 ![License](https://img.shields.io/crates/l/bitflags.svg)
 
-A Rust macro to generate structures which behave like a set of bitflags
+`bitflags` generates flags enums with well-defined semantics and ergonomic end-user APIs.
+
+You can use `bitflags` to:
+
+- provide more user-friendly bindings to C APIs where flags may or may not be fully known in advance.
+- generate efficient options types with string parsing and formatting support.
+
+You can't use `bitflags` to:
+
+- guarantee only bits corresponding to defined flags will ever be set. `bitflags` allows access to the underlying bits type so arbitrary bits may be set.
+- define bitfields. `bitflags` only generates types where set bits denote the presence of some combination of flags.
 
 - [Documentation](https://docs.rs/bitflags)
+- [Specification](https://github.com/bitflags/bitflags/blob/main/spec.md)
 - [Release notes](https://github.com/bitflags/bitflags/releases)
 
 ## Usage
@@ -17,7 +28,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-bitflags = "2.3.3"
+bitflags = "2.4.2"
 ```
 
 and this to your source code:
@@ -35,11 +46,17 @@ use bitflags::bitflags;
 
 // The `bitflags!` macro generates `struct`s that manage a set of flags.
 bitflags! {
+    /// Represents a set of flags.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     struct Flags: u32 {
+        /// The value `A`, at bit position `0`.
         const A = 0b00000001;
+        /// The value `B`, at bit position `1`.
         const B = 0b00000010;
+        /// The value `C`, at bit position `2`.
         const C = 0b00000100;
+
+        /// The combination of `A`, `B`, and `C`.
         const ABC = Self::A.bits() | Self::B.bits() | Self::C.bits();
     }
 }
