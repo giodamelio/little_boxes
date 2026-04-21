@@ -1,4 +1,4 @@
-//! Example to test arguments with different ValueHint values.
+//! Example to test arguments with different `ValueHint` values.
 //!
 //! Usage with zsh:
 //! ```console
@@ -12,8 +12,8 @@
 //! $ . ./completion.fish
 //! $ ./target/debug/examples/completion --<TAB>
 //! ```
-use clap::{value_parser, Arg, Command, ValueHint};
-use clap_complete::{generate, Generator, Shell};
+use clap::{Arg, Command, ValueHint, value_parser};
+use clap_complete::{Generator, Shell, generate};
 use std::io;
 
 fn build_cli() -> Command {
@@ -94,8 +94,13 @@ fn build_cli() -> Command {
         .subcommand(value_hint_command)
 }
 
-fn print_completions<G: Generator>(gen: G, cmd: &mut Command) {
-    generate(gen, cmd, cmd.get_name().to_string(), &mut io::stdout());
+fn print_completions<G: Generator>(generator: G, cmd: &mut Command) {
+    generate(
+        generator,
+        cmd,
+        cmd.get_name().to_string(),
+        &mut io::stdout(),
+    );
 }
 
 fn main() {

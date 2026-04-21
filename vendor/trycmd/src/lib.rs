@@ -135,7 +135,7 @@
 //! - 1-to-1 with dumped results
 //! - `TRYCMD=overwrite` support
 //!
-//! [See full schema](https://github.com/assert-rs/trycmd/blob/main/schema.json):
+//! [See full schema](https://github.com/assert-rs/snapbox/blob/main/crates/trycmd/schema.json):
 //! Basic parameters:
 //! - `bin.name`: The name of the binary target from `Cargo.toml` to be used to find the file path
 //! - `args`: the arguments (including flags and option) passed to the binary
@@ -191,8 +191,8 @@
 //!
 //! ## Examples
 //!
-//! - Simple cargo binary: [trycmd's integration tests](https://github.com/assert-rs/trycmd/blob/main/tests/cli_tests.rs)
-//! - Simple example: [trycmd's integration tests](https://github.com/assert-rs/trycmd/blob/main/tests/example_tests.rs)
+//! - Simple cargo binary: [trycmd's integration tests](https://github.com/assert-rs/snapbox/blob/main/crates/trycmd/tests/cli_tests.rs)
+//! - Simple example: [trycmd's integration tests](https://github.com/assert-rs/snapbox/blob/main/crates/trycmd/tests/example_tests.rs)
 //! - [typos](https://github.com/crate-ci/typos) (source code spell checker)
 //! - [clap](https://github.com/clap-rs/clap/) (CLI parser) to test examples
 //!
@@ -225,11 +225,9 @@
 //! [assert_cmd]: https://crates.io/crates/assert_cmd
 //! [commandspec]: https://crates.io/crates/commandspec
 
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
-// Doesn't distinguish between incidental sharing vs essential sharing
-#![allow(clippy::branches_sharing_code)]
-// Forces indentation that may not represent the logic
-#![allow(clippy::collapsible_else_if)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(clippy::print_stderr)]
+#![warn(clippy::print_stdout)]
 
 pub mod cargo;
 pub mod schema;
@@ -240,10 +238,14 @@ mod runner;
 mod spec;
 
 pub use cases::TestCases;
-pub use snapbox::Error;
+pub use snapbox::assert::Error;
 
 pub(crate) use registry::BinRegistry;
 pub(crate) use runner::{Case, Mode, Runner};
 pub(crate) use spec::RunnerSpec;
 
 pub(crate) use snapbox::Data;
+
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;

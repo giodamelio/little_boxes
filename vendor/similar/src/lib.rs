@@ -112,15 +112,19 @@
 //! a very, very long time to execute.  Too long to make sense in practice.
 //! To work around this issue all diffing algorithms also provide a version
 //! that accepts a deadline which is the point in time as defined by an
-//! [`Instant`](std::time::Instant) after which the algorithm should give up.
-//! What giving up means depends on the algorithm.  For instance due to the
-//! recursive, divide and conquer nature of Myer's diff you will still get a
-//! pretty decent diff in many cases when a deadline is reached.  Whereas on the
-//! other hand the LCS diff is unlikely to give any decent results in such a
-//! situation.
+//! [`Instant`] after which the algorithm should give up.  What giving up means
+//! depends on the algorithm.  For instance due to the recursive, divide and
+//! conquer nature of Myer's diff you will still get a pretty decent diff in
+//! many cases when a deadline is reached.  Whereas on the other hand the LCS
+//! diff is unlikely to give any decent results in such a situation.
 //!
 //! The [`TextDiff`] type also lets you configure a deadline and/or timeout
 //! when performing a text diff.
+//!
+//! Note that on wasm targets calling [`Instant::now`] will result in a panic
+//! unless you enable the `wasm32_web_time` feataure.  By default similar will
+//! silently disable the deadline checks internally unless that feature is
+//! enabled.
 //!
 //! # Feature Flags
 //!
@@ -144,6 +148,10 @@
 //!   in a line diff.  This currently also enables the `unicode` feature.
 //! * `serde`: this feature enables serialization to some types in this
 //!   crate.  For enums without payload deserialization is then also supported.
+//! * `wasm32_web_time`: this feature swaps out the use of [`std::time`] for
+//!   the `web_time` crate.  Because this is a change to the public interface,
+//!   this feature must be used with care.  The instant type for this crate is
+//!   then re-exported top-level module.
 #![warn(missing_docs)]
 pub mod algorithms;
 pub mod iter;
@@ -153,6 +161,7 @@ pub mod udiff;
 pub mod utils;
 
 mod common;
+mod deadline_support;
 #[cfg(feature = "text")]
 mod text;
 mod types;
@@ -161,3 +170,7 @@ pub use self::common::*;
 #[cfg(feature = "text")]
 pub use self::text::*;
 pub use self::types::*;
+
+// re-export the type for web-time feature
+#[cfg(feature = "wasm32_web_time")]
+pub use deadline_support::Instant;

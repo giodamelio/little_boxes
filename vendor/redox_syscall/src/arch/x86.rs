@@ -1,11 +1,17 @@
-use core::{mem, slice};
-use core::arch::asm;
-use core::ops::{Deref, DerefMut};
+use core::{
+    arch::asm,
+    mem,
+    ops::{Deref, DerefMut},
+    slice,
+};
 
 use super::error::{Error, Result};
 
 pub const PAGE_SIZE: usize = 4096;
+/// Size of the metadata region used to transfer information from the kernel to the bootstrapper.
+pub const KERNEL_METADATA_SIZE: usize = 4 * PAGE_SIZE;
 
+#[cfg(feature = "userspace")]
 macro_rules! syscall {
     ($($name:ident($a:ident, $($b:ident, $($c:ident, $($d:ident, $($e:ident, $($f:ident, )?)?)?)?)?);)+) => {
         $(
@@ -37,6 +43,7 @@ macro_rules! syscall {
     };
 }
 
+#[cfg(feature = "userspace")]
 syscall! {
     syscall0(a,);
     syscall1(a, b,);
@@ -45,10 +52,11 @@ syscall! {
     // Must be done custom because LLVM reserves ESI
     //syscall4(a, b, c, d, e,);
     //syscall5(a, b, c, d, e, f,);
+    //syscall6(a, b, c, d, e, f, g,);
 }
 
-pub unsafe fn syscall4(mut a: usize, b: usize, c: usize, d: usize, e: usize)
-                       -> Result<usize> {
+#[cfg(feature = "userspace")]
+pub unsafe fn syscall4(mut a: usize, b: usize, c: usize, d: usize, e: usize) -> Result<usize> {
     asm!(
         "xchg esi, {e}
         int 0x80
@@ -64,8 +72,15 @@ pub unsafe fn syscall4(mut a: usize, b: usize, c: usize, d: usize, e: usize)
     Error::demux(a)
 }
 
-pub unsafe fn syscall5(mut a: usize, b: usize, c: usize, d: usize, e: usize, f: usize)
-                       -> Result<usize> {
+#[cfg(feature = "userspace")]
+pub unsafe fn syscall5(
+    mut a: usize,
+    b: usize,
+    c: usize,
+    d: usize,
+    e: usize,
+    f: usize,
+) -> Result<usize> {
     asm!(
         "xchg esi, {e}
         int 0x80
@@ -82,11 +97,52 @@ pub unsafe fn syscall5(mut a: usize, b: usize, c: usize, d: usize, e: usize, f: 
     Error::demux(a)
 }
 
+#[cfg(feature = "userspace")]
+pub unsafe fn syscall6(
+    mut a: usize,
+    b: usize,
+    c: usize,
+    d: usize,
+    e: usize,
+    f: usize,
+    g: usize,
+) -> Result<usize> {
+    #[repr(C)]
+    struct PackedArgs {
+        arg4: usize,
+        arg6: usize,
+        nr: usize,
+    }
+    let args = PackedArgs {
+        arg4: e,
+        arg6: g,
+        nr: a,
+    };
+    let args_ptr = &args as *const PackedArgs;
+    asm!(
+        "push ebp",
+        "push esi",
+        "mov esi, [eax + 0]", // arg4 -> esi
+        "mov ebp, [eax + 4]", // arg6 -> ebp
+        "mov eax, [eax + 8]", // nr -> eax
+        "int 0x80",
+        "pop esi",
+        "pop ebp",
+        inout("eax") args_ptr => a,
+        in("ebx") b,
+        in("ecx") c,
+        in("edx") d,
+        in("edi") f,
+        options(nostack),
+    );
+
+    Error::demux(a)
+}
+
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(C)]
 pub struct IntRegisters {
     // TODO: Some of these don't get set by Redox yet. Should they?
-
     pub ebp: usize,
     pub esi: usize,
     pub edi: usize,
@@ -112,7 +168,10 @@ impl Deref for IntRegisters {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
         unsafe {
-            slice::from_raw_parts(self as *const IntRegisters as *const u8, mem::size_of::<IntRegisters>())
+            slice::from_raw_parts(
+                self as *const IntRegisters as *const u8,
+                mem::size_of::<IntRegisters>(),
+            )
         }
     }
 }
@@ -120,13 +179,16 @@ impl Deref for IntRegisters {
 impl DerefMut for IntRegisters {
     fn deref_mut(&mut self) -> &mut [u8] {
         unsafe {
-            slice::from_raw_parts_mut(self as *mut IntRegisters as *mut u8, mem::size_of::<IntRegisters>())
+            slice::from_raw_parts_mut(
+                self as *mut IntRegisters as *mut u8,
+                mem::size_of::<IntRegisters>(),
+            )
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct FloatRegisters {
     pub fcw: u16,
     pub fsw: u16,
@@ -146,7 +208,10 @@ impl Deref for FloatRegisters {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
         unsafe {
-            slice::from_raw_parts(self as *const FloatRegisters as *const u8, mem::size_of::<FloatRegisters>())
+            slice::from_raw_parts(
+                self as *const FloatRegisters as *const u8,
+                mem::size_of::<FloatRegisters>(),
+            )
         }
     }
 }
@@ -154,13 +219,16 @@ impl Deref for FloatRegisters {
 impl DerefMut for FloatRegisters {
     fn deref_mut(&mut self) -> &mut [u8] {
         unsafe {
-            slice::from_raw_parts_mut(self as *mut FloatRegisters as *mut u8, mem::size_of::<FloatRegisters>())
+            slice::from_raw_parts_mut(
+                self as *mut FloatRegisters as *mut u8,
+                mem::size_of::<FloatRegisters>(),
+            )
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct EnvRegisters {
     pub fsbase: u32,
     pub gsbase: u32,
@@ -170,7 +238,10 @@ impl Deref for EnvRegisters {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
         unsafe {
-            slice::from_raw_parts(self as *const EnvRegisters as *const u8, mem::size_of::<EnvRegisters>())
+            slice::from_raw_parts(
+                self as *const EnvRegisters as *const u8,
+                mem::size_of::<EnvRegisters>(),
+            )
         }
     }
 }
@@ -178,7 +249,40 @@ impl Deref for EnvRegisters {
 impl DerefMut for EnvRegisters {
     fn deref_mut(&mut self) -> &mut [u8] {
         unsafe {
-            slice::from_raw_parts_mut(self as *mut EnvRegisters as *mut u8, mem::size_of::<EnvRegisters>())
+            slice::from_raw_parts_mut(
+                self as *mut EnvRegisters as *mut u8,
+                mem::size_of::<EnvRegisters>(),
+            )
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C, packed)]
+pub struct Exception {
+    pub kind: usize,
+    pub code: usize,
+    pub address: usize,
+}
+impl Deref for Exception {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        unsafe {
+            slice::from_raw_parts(
+                self as *const Exception as *const u8,
+                mem::size_of::<Exception>(),
+            )
+        }
+    }
+}
+
+impl DerefMut for Exception {
+    fn deref_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            slice::from_raw_parts_mut(
+                self as *mut Exception as *mut u8,
+                mem::size_of::<Exception>(),
+            )
         }
     }
 }

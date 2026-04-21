@@ -1,13 +1,11 @@
 use super::noop::NoopConsumer;
 use super::plumbing::*;
 use super::*;
-use std::cmp::min;
 
 /// `Skip` is an iterator that skips over the first `n` elements.
 /// This struct is created by the [`skip()`] method on [`IndexedParallelIterator`]
 ///
-/// [`skip()`]: trait.IndexedParallelIterator.html#method.skip
-/// [`IndexedParallelIterator`]: trait.IndexedParallelIterator.html
+/// [`skip()`]: IndexedParallelIterator::skip()
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 #[derive(Debug, Clone)]
 pub struct Skip<I> {
@@ -21,7 +19,7 @@ where
 {
     /// Creates a new `Skip` iterator.
     pub(super) fn new(base: I, n: usize) -> Self {
-        let n = min(base.len(), n);
+        let n = Ord::min(base.len(), n);
         Skip { base, n }
     }
 }

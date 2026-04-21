@@ -1,12 +1,10 @@
 use super::plumbing::*;
 use super::*;
-use std::cmp::min;
 
 /// `Take` is an iterator that iterates over the first `n` elements.
 /// This struct is created by the [`take()`] method on [`IndexedParallelIterator`]
 ///
-/// [`take()`]: trait.IndexedParallelIterator.html#method.take
-/// [`IndexedParallelIterator`]: trait.IndexedParallelIterator.html
+/// [`take()`]: IndexedParallelIterator::take()
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 #[derive(Debug, Clone)]
 pub struct Take<I> {
@@ -20,7 +18,7 @@ where
 {
     /// Creates a new `Take` iterator.
     pub(super) fn new(base: I, n: usize) -> Self {
-        let n = min(base.len(), n);
+        let n = Ord::min(base.len(), n);
         Take { base, n }
     }
 }

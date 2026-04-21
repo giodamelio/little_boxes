@@ -1,29 +1,31 @@
-//! Parallel iterator types for [slices][std::slice]
+//! Parallel iterator types for [slices]
 //!
 //! You will rarely need to interact with this module directly unless you need
 //! to name one of the iterator types.
 //!
-//! [std::slice]: https://doc.rust-lang.org/stable/std/slice/
+//! [slices]: std::slice
 
+mod chunk_by;
 mod chunks;
-mod mergesort;
-mod quicksort;
 mod rchunks;
+mod sort;
+mod windows;
 
 mod test;
 
-use self::mergesort::par_mergesort;
-use self::quicksort::par_quicksort;
+use self::sort::par_mergesort;
+use self::sort::par_quicksort;
 use crate::iter::plumbing::*;
 use crate::iter::*;
 use crate::split_producer::*;
-use std::cmp;
+
 use std::cmp::Ordering;
 use std::fmt::{self, Debug};
-use std::mem;
 
+pub use self::chunk_by::{ChunkBy, ChunkByMut};
 pub use self::chunks::{Chunks, ChunksExact, ChunksExactMut, ChunksMut};
 pub use self::rchunks::{RChunks, RChunksExact, RChunksExactMut, RChunksMut};
+pub use self::windows::{ArrayWindows, Windows};
 
 /// Parallel extensions for slices.
 pub trait ParallelSlice<T: Sync> {
@@ -88,10 +90,21 @@ pub trait ParallelSlice<T: Sync> {
     /// assert_eq!(vec![[1, 2], [2, 3]], windows);
     /// ```
     fn par_windows(&self, window_size: usize) -> Windows<'_, T> {
-        Windows {
-            window_size,
-            slice: self.as_parallel_slice(),
-        }
+        Windows::new(window_size, self.as_parallel_slice())
+    }
+
+    /// Returns a parallel iterator over all contiguous array windows of
+    /// length `N`. The windows overlap.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rayon::prelude::*;
+    /// let windows: Vec<_> = [1, 2, 3].par_array_windows().collect();
+    /// assert_eq!(vec![&[1, 2], &[2, 3]], windows);
+    /// ```
+    fn par_array_windows<const N: usize>(&self) -> ArrayWindows<'_, T, N> {
+        ArrayWindows::new(self.as_parallel_slice())
     }
 
     /// Returns a parallel iterator over at most `chunk_size` elements of
@@ -172,6 +185,29 @@ pub trait ParallelSlice<T: Sync> {
     fn par_rchunks_exact(&self, chunk_size: usize) -> RChunksExact<'_, T> {
         assert!(chunk_size != 0, "chunk_size must not be zero");
         RChunksExact::new(chunk_size, self.as_parallel_slice())
+    }
+
+    /// Returns a parallel iterator over the slice producing non-overlapping runs
+    /// of elements using the predicate to separate them.
+    ///
+    /// The predicate is called on two elements following themselves,
+    /// it means the predicate is called on `slice[0]` and `slice[1]`
+    /// then on `slice[1]` and `slice[2]` and so on.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rayon::prelude::*;
+    /// let chunks: Vec<_> = [1, 2, 2, 3, 3, 3].par_chunk_by(|&x, &y| x == y).collect();
+    /// assert_eq!(chunks[0], &[1]);
+    /// assert_eq!(chunks[1], &[2, 2]);
+    /// assert_eq!(chunks[2], &[3, 3, 3]);
+    /// ```
+    fn par_chunk_by<F>(&self, pred: F) -> ChunkBy<'_, T, F>
+    where
+        F: Fn(&T, &T) -> bool + Send + Sync,
+    {
+        ChunkBy::new(self.as_parallel_slice(), pred)
     }
 }
 
@@ -543,18 +579,18 @@ pub trait ParallelSliceMut<T: Send> {
             }};
         }
 
-        let sz_u8 = mem::size_of::<(K, u8)>();
-        let sz_u16 = mem::size_of::<(K, u16)>();
-        let sz_u32 = mem::size_of::<(K, u32)>();
-        let sz_usize = mem::size_of::<(K, usize)>();
+        let sz_u8 = size_of::<(K, u8)>();
+        let sz_u16 = size_of::<(K, u16)>();
+        let sz_u32 = size_of::<(K, u32)>();
+        let sz_usize = size_of::<(K, usize)>();
 
-        if sz_u8 < sz_u16 && len <= (std::u8::MAX as usize) {
+        if sz_u8 < sz_u16 && len <= (u8::MAX as usize) {
             return sort_by_key!(u8);
         }
-        if sz_u16 < sz_u32 && len <= (std::u16::MAX as usize) {
+        if sz_u16 < sz_u32 && len <= (u16::MAX as usize) {
             return sort_by_key!(u16);
         }
-        if sz_u32 < sz_usize && len <= (std::u32::MAX as usize) {
+        if sz_u32 < sz_usize && len <= (u32::MAX as usize) {
             return sort_by_key!(u32);
         }
         sort_by_key!(usize)
@@ -704,6 +740,30 @@ pub trait ParallelSliceMut<T: Send> {
     {
         par_quicksort(self.as_parallel_slice_mut(), |a, b| f(a).lt(&f(b)));
     }
+
+    /// Returns a parallel iterator over the slice producing non-overlapping mutable
+    /// runs of elements using the predicate to separate them.
+    ///
+    /// The predicate is called on two elements following themselves,
+    /// it means the predicate is called on `slice[0]` and `slice[1]`
+    /// then on `slice[1]` and `slice[2]` and so on.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rayon::prelude::*;
+    /// let mut xs = [1, 2, 2, 3, 3, 3];
+    /// let chunks: Vec<_> = xs.par_chunk_by_mut(|&x, &y| x == y).collect();
+    /// assert_eq!(chunks[0], &mut [1]);
+    /// assert_eq!(chunks[1], &mut [2, 2]);
+    /// assert_eq!(chunks[2], &mut [3, 3, 3]);
+    /// ```
+    fn par_chunk_by_mut<F>(&mut self, pred: F) -> ChunkByMut<'_, T, F>
+    where
+        F: Fn(&T, &T) -> bool + Send + Sync,
+    {
+        ChunkByMut::new(self.as_parallel_slice_mut(), pred)
+    }
 }
 
 impl<T: Send> ParallelSliceMut<T> for [T] {
@@ -713,7 +773,7 @@ impl<T: Send> ParallelSliceMut<T> for [T] {
     }
 }
 
-impl<'data, T: Sync + 'data> IntoParallelIterator for &'data [T] {
+impl<'data, T: Sync> IntoParallelIterator for &'data [T] {
     type Item = &'data T;
     type Iter = Iter<'data, T>;
 
@@ -722,7 +782,25 @@ impl<'data, T: Sync + 'data> IntoParallelIterator for &'data [T] {
     }
 }
 
-impl<'data, T: Send + 'data> IntoParallelIterator for &'data mut [T] {
+impl<'data, T: Sync> IntoParallelIterator for &'data Box<[T]> {
+    type Item = &'data T;
+    type Iter = Iter<'data, T>;
+
+    fn into_par_iter(self) -> Self::Iter {
+        Iter { slice: self }
+    }
+}
+
+impl<'data, T: Send> IntoParallelIterator for &'data mut [T] {
+    type Item = &'data mut T;
+    type Iter = IterMut<'data, T>;
+
+    fn into_par_iter(self) -> Self::Iter {
+        IterMut { slice: self }
+    }
+}
+
+impl<'data, T: Send> IntoParallelIterator for &'data mut Box<[T]> {
     type Item = &'data mut T;
     type Iter = IterMut<'data, T>;
 
@@ -733,17 +811,17 @@ impl<'data, T: Send + 'data> IntoParallelIterator for &'data mut [T] {
 
 /// Parallel iterator over immutable items in a slice
 #[derive(Debug)]
-pub struct Iter<'data, T: Sync> {
+pub struct Iter<'data, T> {
     slice: &'data [T],
 }
 
-impl<'data, T: Sync> Clone for Iter<'data, T> {
+impl<T> Clone for Iter<'_, T> {
     fn clone(&self) -> Self {
         Iter { ..*self }
     }
 }
 
-impl<'data, T: Sync + 'data> ParallelIterator for Iter<'data, T> {
+impl<'data, T: Sync> ParallelIterator for Iter<'data, T> {
     type Item = &'data T;
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
@@ -758,7 +836,7 @@ impl<'data, T: Sync + 'data> ParallelIterator for Iter<'data, T> {
     }
 }
 
-impl<'data, T: Sync + 'data> IndexedParallelIterator for Iter<'data, T> {
+impl<T: Sync> IndexedParallelIterator for Iter<'_, T> {
     fn drive<C>(self, consumer: C) -> C::Result
     where
         C: Consumer<Self::Item>,
@@ -796,95 +874,13 @@ impl<'data, T: 'data + Sync> Producer for IterProducer<'data, T> {
     }
 }
 
-/// Parallel iterator over immutable overlapping windows of a slice
-#[derive(Debug)]
-pub struct Windows<'data, T: Sync> {
-    window_size: usize,
-    slice: &'data [T],
-}
-
-impl<'data, T: Sync> Clone for Windows<'data, T> {
-    fn clone(&self) -> Self {
-        Windows { ..*self }
-    }
-}
-
-impl<'data, T: Sync + 'data> ParallelIterator for Windows<'data, T> {
-    type Item = &'data [T];
-
-    fn drive_unindexed<C>(self, consumer: C) -> C::Result
-    where
-        C: UnindexedConsumer<Self::Item>,
-    {
-        bridge(self, consumer)
-    }
-
-    fn opt_len(&self) -> Option<usize> {
-        Some(self.len())
-    }
-}
-
-impl<'data, T: Sync + 'data> IndexedParallelIterator for Windows<'data, T> {
-    fn drive<C>(self, consumer: C) -> C::Result
-    where
-        C: Consumer<Self::Item>,
-    {
-        bridge(self, consumer)
-    }
-
-    fn len(&self) -> usize {
-        assert!(self.window_size >= 1);
-        self.slice.len().saturating_sub(self.window_size - 1)
-    }
-
-    fn with_producer<CB>(self, callback: CB) -> CB::Output
-    where
-        CB: ProducerCallback<Self::Item>,
-    {
-        callback.callback(WindowsProducer {
-            window_size: self.window_size,
-            slice: self.slice,
-        })
-    }
-}
-
-struct WindowsProducer<'data, T: Sync> {
-    window_size: usize,
-    slice: &'data [T],
-}
-
-impl<'data, T: 'data + Sync> Producer for WindowsProducer<'data, T> {
-    type Item = &'data [T];
-    type IntoIter = ::std::slice::Windows<'data, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.slice.windows(self.window_size)
-    }
-
-    fn split_at(self, index: usize) -> (Self, Self) {
-        let left_index = cmp::min(self.slice.len(), index + (self.window_size - 1));
-        let left = &self.slice[..left_index];
-        let right = &self.slice[index..];
-        (
-            WindowsProducer {
-                window_size: self.window_size,
-                slice: left,
-            },
-            WindowsProducer {
-                window_size: self.window_size,
-                slice: right,
-            },
-        )
-    }
-}
-
 /// Parallel iterator over mutable items in a slice
 #[derive(Debug)]
-pub struct IterMut<'data, T: Send> {
+pub struct IterMut<'data, T> {
     slice: &'data mut [T],
 }
 
-impl<'data, T: Send + 'data> ParallelIterator for IterMut<'data, T> {
+impl<'data, T: Send> ParallelIterator for IterMut<'data, T> {
     type Item = &'data mut T;
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
@@ -899,7 +895,7 @@ impl<'data, T: Send + 'data> ParallelIterator for IterMut<'data, T> {
     }
 }
 
-impl<'data, T: Send + 'data> IndexedParallelIterator for IterMut<'data, T> {
+impl<T: Send> IndexedParallelIterator for IterMut<'_, T> {
     fn drive<C>(self, consumer: C) -> C::Result
     where
         C: Consumer<Self::Item>,
@@ -946,7 +942,7 @@ pub struct Split<'data, T, P> {
     separator: P,
 }
 
-impl<'data, T, P: Clone> Clone for Split<'data, T, P> {
+impl<T, P: Clone> Clone for Split<'_, T, P> {
     fn clone(&self) -> Self {
         Split {
             separator: self.separator.clone(),
@@ -955,7 +951,7 @@ impl<'data, T, P: Clone> Clone for Split<'data, T, P> {
     }
 }
 
-impl<'data, T: Debug, P> Debug for Split<'data, T, P> {
+impl<T: Debug, P> Debug for Split<'_, T, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Split").field("slice", &self.slice).finish()
     }
@@ -984,7 +980,7 @@ pub struct SplitInclusive<'data, T, P> {
     separator: P,
 }
 
-impl<'data, T, P: Clone> Clone for SplitInclusive<'data, T, P> {
+impl<T, P: Clone> Clone for SplitInclusive<'_, T, P> {
     fn clone(&self) -> Self {
         SplitInclusive {
             separator: self.separator.clone(),
@@ -993,7 +989,7 @@ impl<'data, T, P: Clone> Clone for SplitInclusive<'data, T, P> {
     }
 }
 
-impl<'data, T: Debug, P> Debug for SplitInclusive<'data, T, P> {
+impl<T: Debug, P> Debug for SplitInclusive<'_, T, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SplitInclusive")
             .field("slice", &self.slice)
@@ -1018,7 +1014,7 @@ where
 }
 
 /// Implement support for `SplitProducer`.
-impl<'data, T, P> Fissile<P> for &'data [T]
+impl<T, P> Fissile<P> for &[T]
 where
     P: Fn(&T) -> bool,
 {
@@ -1072,7 +1068,7 @@ pub struct SplitMut<'data, T, P> {
     separator: P,
 }
 
-impl<'data, T: Debug, P> Debug for SplitMut<'data, T, P> {
+impl<T: Debug, P> Debug for SplitMut<'_, T, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SplitMut")
             .field("slice", &self.slice)
@@ -1103,7 +1099,7 @@ pub struct SplitInclusiveMut<'data, T, P> {
     separator: P,
 }
 
-impl<'data, T: Debug, P> Debug for SplitInclusiveMut<'data, T, P> {
+impl<T: Debug, P> Debug for SplitInclusiveMut<'_, T, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SplitInclusiveMut")
             .field("slice", &self.slice)
@@ -1128,7 +1124,7 @@ where
 }
 
 /// Implement support for `SplitProducer`.
-impl<'data, T, P> Fissile<P> for &'data mut [T]
+impl<T, P> Fissile<P> for &mut [T]
 where
     P: Fn(&T) -> bool,
 {

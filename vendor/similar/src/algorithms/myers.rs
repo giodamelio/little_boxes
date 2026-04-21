@@ -20,10 +20,10 @@
 //! For potential improvements here see [similar#15](https://github.com/mitsuhiko/similar/issues/15).
 
 use std::ops::{Index, IndexMut, Range};
-use std::time::Instant;
 
 use crate::algorithms::utils::{common_prefix_len, common_suffix_len, is_empty_range};
 use crate::algorithms::DiffHook;
+use crate::deadline_support::{deadline_exceeded, Instant};
 
 /// Myers' diff algorithm.
 ///
@@ -175,10 +175,8 @@ where
 
     for d in 0..d_max as isize {
         // are we running for too long?
-        if let Some(deadline) = deadline {
-            if Instant::now() > deadline {
-                break;
-            }
+        if deadline_exceeded(deadline) {
+            break;
         }
 
         // Forward path
@@ -388,7 +386,7 @@ fn test_deadline_reached() {
 
     struct SlowIndex<'a>(&'a [usize]);
 
-    impl<'a> Index<usize> for SlowIndex<'a> {
+    impl Index<usize> for SlowIndex<'_> {
         type Output = usize;
 
         fn index(&self, index: usize) -> &Self::Output {

@@ -1,5 +1,5 @@
 use clap::{Arg, ArgAction};
-use roff::{bold, italic, roman, Inline, Roff};
+use roff::{Inline, Roff, bold, italic, roman};
 
 pub(crate) fn subcommand_heading(cmd: &clap::Command) -> &str {
     match cmd.get_subcommand_help_heading() {
@@ -11,7 +11,7 @@ pub(crate) fn subcommand_heading(cmd: &clap::Command) -> &str {
 pub(crate) fn about(roff: &mut Roff, cmd: &clap::Command) {
     let name = cmd.get_display_name().unwrap_or_else(|| cmd.get_name());
     let s = match cmd.get_about().or_else(|| cmd.get_long_about()) {
-        Some(about) => format!("{} - {}", name, about),
+        Some(about) => format!("{name} - {about}"),
         None => name.to_owned(),
     };
     roff.text([roman(s)]);
@@ -33,7 +33,11 @@ pub(crate) fn synopsis(roff: &mut Roff, cmd: &clap::Command) {
     let name = cmd.get_bin_name().unwrap_or_else(|| cmd.get_name());
     let mut line = vec![bold(name), roman(" ")];
 
-    for opt in cmd.get_arguments().filter(|i| !i.is_hide_set()) {
+    let mut opts: Vec<_> = cmd.get_arguments().filter(|i| !i.is_hide_set()).collect();
+
+    opts.sort_by_key(|opt| option_sort_key(opt));
+
+    for opt in opts {
         let (lhs, rhs) = option_markers(opt);
         match (opt.get_short(), opt.get_long()) {
             (Some(short), Some(long)) => {
@@ -57,7 +61,7 @@ pub(crate) fn synopsis(roff: &mut Roff, cmd: &clap::Command) {
         };
 
         if matches!(opt.get_action(), ArgAction::Count) {
-            line.push(roman("..."))
+            line.push(roman("..."));
         }
         line.push(roman(" "));
     }
@@ -88,10 +92,11 @@ pub(crate) fn synopsis(roff: &mut Roff, cmd: &clap::Command) {
     roff.text(line);
 }
 
-pub(crate) fn options(roff: &mut Roff, cmd: &clap::Command) {
-    let items: Vec<_> = cmd.get_arguments().filter(|i| !i.is_hide_set()).collect();
+pub(crate) fn options(roff: &mut Roff, items: &[&Arg]) {
+    let mut sorted_items = items.to_vec();
+    sorted_items.sort_by_key(|opt| option_sort_key(opt));
 
-    for opt in items.iter().filter(|a| !a.is_positional()) {
+    for opt in sorted_items.iter().filter(|a| !a.is_positional()) {
         let mut header = match (opt.get_short(), opt.get_long()) {
             (Some(short), Some(long)) => {
                 vec![short_option(short), roman(", "), long_option(long)]
@@ -101,10 +106,28 @@ pub(crate) fn options(roff: &mut Roff, cmd: &clap::Command) {
             (None, None) => vec![],
         };
 
-        if opt.get_num_args().expect("built").takes_values() {
-            if let Some(value) = &opt.get_value_names() {
-                header.push(roman("="));
-                header.push(italic(value.join(" ")));
+        let arg_range = opt.get_num_args().expect("built");
+        if arg_range.takes_values() {
+            if let Some(value_names) = &opt.get_value_names() {
+                let (lhs, rhs) = option_value_markers(opt);
+
+                header.push(roman(lhs));
+                for (i, name) in value_names.iter().enumerate() {
+                    if i > 0 {
+                        header.push(italic(" "));
+                    }
+
+                    let mut val = format!("<{name}>");
+
+                    // If this is the last value and it's variadic, add "..."
+                    let is_last = i == value_names.len() - 1;
+
+                    if is_last && arg_range.max_values() > value_names.len() {
+                        val.push_str("...");
+                    }
+                    header.push(italic(val));
+                }
+                header.push(roman(rhs));
             }
         }
 
@@ -165,43 +188,35 @@ pub(crate) fn options(roff: &mut Roff, cmd: &clap::Command) {
             roff.control("RE", []);
         }
 
-        possible_options(roff, pos, arg_help_written)
+        possible_options(roff, pos, arg_help_written);
     }
 }
 
 fn possible_options(roff: &mut Roff, arg: &Arg, arg_help_written: bool) {
-    if let Some((possible_values_text, with_help)) = get_possible_values(arg) {
+    if let Some(possible_values_text) = get_possible_values(arg) {
         if arg_help_written {
             // It looks nice to have a separation between the help and the values
             roff.text([Inline::LineBreak]);
         }
-        if with_help {
-            roff.text([Inline::LineBreak, italic("Possible values:")]);
+        roff.text([Inline::LineBreak, italic("Possible values:")]);
 
-            // Need to indent twice to get it to look right, because .TP heading indents, but
-            // that indent doesn't Carry over to the .IP for the bullets. The standard shift
-            // size is 7 for terminal devices
-            roff.control("RS", ["14"]);
-            for line in possible_values_text {
-                roff.control("IP", ["\\(bu", "2"]);
-                roff.text([roman(line)]);
-            }
-            roff.control("RE", []);
-        } else {
-            let possible_value_text: Vec<Inline> = vec![
-                Inline::LineBreak,
-                roman("["),
-                italic("possible values: "),
-                roman(possible_values_text.join(", ")),
-                roman("]"),
-            ];
-            roff.text(possible_value_text);
+        // Need to indent twice to get it to look right, because .TP heading indents, but
+        // that indent doesn't Carry over to the .IP for the bullets. The standard shift
+        // size is 7 for terminal devices
+        roff.control("RS", ["14"]);
+        for line in possible_values_text {
+            roff.control("IP", ["\\(bu", "2"]);
+            roff.extend([line]);
         }
+        roff.control("RE", []);
     }
 }
 
 pub(crate) fn subcommands(roff: &mut Roff, cmd: &clap::Command, section: &str) {
-    for sub in cmd.get_subcommands().filter(|s| !s.is_hide_set()) {
+    let mut sorted_subcommands: Vec<_> =
+        cmd.get_subcommands().filter(|s| !s.is_hide_set()).collect();
+    sorted_subcommands.sort_by_key(|c| subcommand_sort_key(c));
+    for sub in sorted_subcommands {
         roff.control("TP", []);
 
         let name = format!(
@@ -241,15 +256,36 @@ fn subcommand_markers(cmd: &clap::Command) -> (&'static str, &'static str) {
     markers(cmd.is_subcommand_required_set())
 }
 
-fn option_markers(opt: &clap::Arg) -> (&'static str, &'static str) {
+fn option_markers(opt: &Arg) -> (&'static str, &'static str) {
     markers(opt.is_required_set())
 }
 
 fn markers(required: bool) -> (&'static str, &'static str) {
-    if required {
-        ("<", ">")
-    } else {
-        ("[", "]")
+    if required { ("<", ">") } else { ("[", "]") }
+}
+
+fn option_value_markers(arg: &Arg) -> (&'static str, &'static str) {
+    let range = arg.get_num_args().expect("built");
+
+    if !range.takes_values() {
+        return ("", ""); // no value, so nothing to render
+    }
+
+    let required = range.min_values() > 0;
+    let require_equals = arg.is_require_equals_set();
+
+    match (required, require_equals) {
+        // Required, no equals: <VALUE>
+        (true, false) => (" ", ""),
+
+        // Optional, no equals: [<VALUE>]
+        (false, false) => (" [", "]"),
+
+        // Optional, with equals: [=<VALUE>]
+        (false, true) => ("[=", "]"),
+
+        // Required, with equals
+        (true, true) => ("=", ""),
     }
 }
 
@@ -261,7 +297,7 @@ fn long_option(opt: &str) -> Inline {
     bold(format!("--{opt}"))
 }
 
-fn option_help(opt: &clap::Arg) -> Option<&clap::builder::StyledStr> {
+fn option_help(opt: &Arg) -> Option<&clap::builder::StyledStr> {
     if !opt.is_hide_long_help_set() {
         let long_help = opt.get_long_help();
         if long_help.is_some() {
@@ -275,7 +311,7 @@ fn option_help(opt: &clap::Arg) -> Option<&clap::builder::StyledStr> {
     None
 }
 
-fn option_environment(opt: &clap::Arg) -> Option<Vec<Inline>> {
+fn option_environment(opt: &Arg) -> Option<Vec<Inline>> {
     if opt.is_hide_env_set() {
         return None;
     } else if let Some(env) = opt.get_env() {
@@ -289,7 +325,7 @@ fn option_environment(opt: &clap::Arg) -> Option<Vec<Inline>> {
     None
 }
 
-fn option_default_values(opt: &clap::Arg) -> Option<String> {
+fn option_default_values(opt: &Arg) -> Option<String> {
     if opt.is_hide_default_value_set() || !opt.get_num_args().expect("built").takes_values() {
         return None;
     } else if !opt.get_default_values().is_empty() {
@@ -306,7 +342,7 @@ fn option_default_values(opt: &clap::Arg) -> Option<String> {
     None
 }
 
-fn get_possible_values(arg: &clap::Arg) -> Option<(Vec<String>, bool)> {
+fn get_possible_values(arg: &Arg) -> Option<Vec<Roff>> {
     if arg.is_hide_possible_values_set() {
         return None;
     }
@@ -321,19 +357,40 @@ fn get_possible_values(arg: &clap::Arg) -> Option<(Vec<String>, bool)> {
     None
 }
 
-fn format_possible_values(possibles: &Vec<&clap::builder::PossibleValue>) -> (Vec<String>, bool) {
+fn format_possible_values(possibles: &Vec<&clap::builder::PossibleValue>) -> Vec<Roff> {
     let mut lines = vec![];
-    let with_help = possibles.iter().any(|p| p.get_help().is_some());
-    if with_help {
-        for value in possibles {
-            let val_name = value.get_name();
-            match value.get_help() {
-                Some(help) => lines.push(format!("{val_name}: {help}")),
-                None => lines.push(val_name.to_string()),
+    for value in possibles {
+        let mut roff = Roff::default();
+        let val_name = value.get_name();
+        match value.get_help() {
+            Some(help) => {
+                roff.text([roman(format!("{val_name}: {help}"))]);
+            }
+            None => {
+                roff.text([roman(val_name.to_owned())]);
             }
         }
-    } else {
-        lines.append(&mut possibles.iter().map(|p| p.get_name().to_string()).collect());
+        lines.push(roff);
     }
-    (lines, with_help)
+    lines
+}
+
+fn subcommand_sort_key(command: &clap::Command) -> (usize, &str) {
+    (command.get_display_order(), command.get_name())
+}
+
+/// Note that this function is duplicated from `clap::builder`
+fn option_sort_key(arg: &Arg) -> (usize, String) {
+    let key = if let Some(x) = arg.get_short() {
+        let mut s = x.to_ascii_lowercase().to_string();
+        s.push(if x.is_ascii_lowercase() { '0' } else { '1' });
+        s
+    } else if let Some(x) = arg.get_long() {
+        x.to_string()
+    } else {
+        let mut s = '{'.to_string();
+        s.push_str(arg.get_id().as_str());
+        s
+    };
+    (arg.get_display_order(), key)
 }

@@ -216,7 +216,7 @@ fn write_diff_inner(
 #[allow(clippy::too_many_arguments)]
 fn write_change(
     writer: &mut dyn std::fmt::Write,
-    change: similar::InlineChange<str>,
+    change: similar::InlineChange<'_, str>,
     sign: &str,
     em_style: crate::report::Style,
     style: crate::report::Style,
@@ -486,8 +486,8 @@ Hello World
         let mut actual_diff = String::new();
         write_diff(
             &mut actual_diff,
-            &crate::data::DataInner::TermSvg(expected.to_owned()).into(),
-            &crate::data::DataInner::TermSvg(actual.to_owned()).into(),
+            &crate::Data::with_inner(crate::data::DataInner::TermSvg(expected.to_owned())),
+            &crate::Data::with_inner(crate::data::DataInner::TermSvg(actual.to_owned())),
             Some(&expected_name),
             Some(&actual_name),
             palette,

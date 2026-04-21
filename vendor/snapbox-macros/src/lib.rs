@@ -1,4 +1,6 @@
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(clippy::print_stderr)]
+#![warn(clippy::print_stdout)]
 
 #[cfg(feature = "color")]
 pub use anstream::eprint;
@@ -14,6 +16,7 @@ pub use std::eprintln;
 #[macro_export]
 macro_rules! debug {
     ($($arg:tt)*) => ({
+        #![allow(unexpected_cfgs)]  // HACK: until we upgrade the minimum anstream
         $crate::eprint!("[{:>w$}] \t", module_path!(), w = 28);
         $crate::eprintln!($($arg)*);
     })
@@ -26,26 +29,6 @@ macro_rules! debug {
     ($($arg:tt)*) => {};
 }
 
-/// The absolute path to a binary target's executable.
-///
-/// The `bin_target_name` is the name of the binary
-/// target, exactly as-is.
-///
-/// **NOTE:** This is only set when building an integration test or benchmark.
-///
-/// ## Example
-///
-/// ```rust,no_run
-/// #[test]
-/// fn cli_tests() {
-///     trycmd::TestCases::new()
-///         .default_bin_path(trycmd::cargo_bin!("bin-fixture"))
-///         .case("tests/cmd/*.trycmd");
-/// }
-/// ```
-#[macro_export]
-macro_rules! cargo_bin {
-    ($bin_target_name:expr) => {
-        ::std::path::Path::new(env!(concat!("CARGO_BIN_EXE_", $bin_target_name)))
-    };
-}
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;

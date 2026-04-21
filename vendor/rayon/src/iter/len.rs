@@ -1,23 +1,18 @@
 use super::plumbing::*;
 use super::*;
-use std::cmp;
 
 /// `MinLen` is an iterator that imposes a minimum length on iterator splits.
 /// This struct is created by the [`with_min_len()`] method on [`IndexedParallelIterator`]
 ///
-/// [`with_min_len()`]: trait.IndexedParallelIterator.html#method.with_min_len
-/// [`IndexedParallelIterator`]: trait.IndexedParallelIterator.html
+/// [`with_min_len()`]: IndexedParallelIterator::with_min_len()
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 #[derive(Debug, Clone)]
-pub struct MinLen<I: IndexedParallelIterator> {
+pub struct MinLen<I> {
     base: I,
     min: usize,
 }
 
-impl<I> MinLen<I>
-where
-    I: IndexedParallelIterator,
-{
+impl<I> MinLen<I> {
     /// Creates a new `MinLen` iterator.
     pub(super) fn new(base: I, min: usize) -> Self {
         MinLen { base, min }
@@ -87,8 +82,8 @@ where
     }
 }
 
-/// ////////////////////////////////////////////////////////////////////////
-/// `MinLenProducer` implementation
+// ////////////////////////////////////////////////////////////////////////
+// `MinLenProducer` implementation
 
 struct MinLenProducer<P> {
     base: P,
@@ -107,7 +102,7 @@ where
     }
 
     fn min_len(&self) -> usize {
-        cmp::max(self.min, self.base.min_len())
+        Ord::max(self.min, self.base.min_len())
     }
 
     fn max_len(&self) -> usize {
@@ -139,19 +134,15 @@ where
 /// `MaxLen` is an iterator that imposes a maximum length on iterator splits.
 /// This struct is created by the [`with_max_len()`] method on [`IndexedParallelIterator`]
 ///
-/// [`with_max_len()`]: trait.IndexedParallelIterator.html#method.with_max_len
-/// [`IndexedParallelIterator`]: trait.IndexedParallelIterator.html
+/// [`with_max_len()`]: IndexedParallelIterator::with_max_len()
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 #[derive(Debug, Clone)]
-pub struct MaxLen<I: IndexedParallelIterator> {
+pub struct MaxLen<I> {
     base: I,
     max: usize,
 }
 
-impl<I> MaxLen<I>
-where
-    I: IndexedParallelIterator,
-{
+impl<I> MaxLen<I> {
     /// Creates a new `MaxLen` iterator.
     pub(super) fn new(base: I, max: usize) -> Self {
         MaxLen { base, max }
@@ -221,8 +212,8 @@ where
     }
 }
 
-/// ////////////////////////////////////////////////////////////////////////
-/// `MaxLenProducer` implementation
+// ////////////////////////////////////////////////////////////////////////
+// `MaxLenProducer` implementation
 
 struct MaxLenProducer<P> {
     base: P,
@@ -245,7 +236,7 @@ where
     }
 
     fn max_len(&self) -> usize {
-        cmp::min(self.max, self.base.max_len())
+        Ord::min(self.max, self.base.max_len())
     }
 
     fn split_at(self, index: usize) -> (Self, Self) {

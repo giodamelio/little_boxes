@@ -1,32 +1,316 @@
+//! `actual` and `expected` [`Data`] for testing code
+
+mod filters;
 mod format;
-mod normalize;
 mod runtime;
 mod source;
 #[cfg(test)]
 mod tests;
 
 pub use format::DataFormat;
-pub use normalize::Normalize;
-pub use normalize::NormalizeMatches;
-pub use normalize::NormalizeNewlines;
-pub use normalize::NormalizePaths;
 pub use source::DataSource;
 pub use source::Inline;
+#[doc(hidden)]
 pub use source::Position;
 
+use filters::FilterSet;
+
+/// Capture the pretty debug representation of a value
+///
+/// Note: this is fairly brittle as debug representations are not generally subject to semver
+/// guarantees.
+///
+/// ```rust,no_run
+/// use snapbox::ToDebug as _;
+///
+/// fn some_function() -> usize {
+///     // ...
+/// # 5
+/// }
+///
+/// let actual = some_function();
+/// let expected = snapbox::str![["5"]];
+/// snapbox::assert_data_eq!(actual.to_debug(), expected);
+/// ```
 pub trait ToDebug {
     fn to_debug(&self) -> Data;
 }
 
 impl<D: std::fmt::Debug> ToDebug for D {
     fn to_debug(&self) -> Data {
-        Data::text(format!("{:#?}\n", self))
+        Data::text(format!("{self:#?}\n"))
+    }
+}
+
+/// Capture the serde representation of a value
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use snapbox::IntoJson as _;
+///
+/// fn some_function() -> usize {
+///     // ...
+/// # 5
+/// }
+///
+/// let actual = some_function();
+/// let expected = snapbox::str![["5"]];
+/// snapbox::assert_data_eq!(actual.into_json(), expected);
+/// ```
+#[cfg(feature = "json")]
+pub trait IntoJson {
+    fn into_json(self) -> Data;
+}
+
+#[cfg(feature = "json")]
+impl<S: serde::Serialize> IntoJson for S {
+    fn into_json(self) -> Data {
+        match serde_json::to_value(self) {
+            Ok(value) => Data::json(value),
+            Err(err) => Data::error(err.to_string(), DataFormat::Json),
+        }
+    }
+}
+
+/// Convert to [`Data`] with modifiers for `expected` data
+#[allow(clippy::wrong_self_convention)]
+pub trait IntoData: Sized {
+    /// Remove default [`filters`][crate::filter] from this `expected` result
+    fn raw(self) -> Data {
+        self.into_data().raw()
+    }
+
+    /// Treat lines and json arrays as unordered
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "json")] {
+    /// use snapbox::prelude::*;
+    /// use snapbox::str;
+    /// use snapbox::assert_data_eq;
+    ///
+    /// let actual = str![[r#"["world", "hello"]"#]]
+    ///     .is(snapbox::data::DataFormat::Json)
+    ///     .unordered();
+    /// let expected = str![[r#"["hello", "world"]"#]]
+    ///     .is(snapbox::data::DataFormat::Json)
+    ///     .unordered();
+    /// assert_data_eq!(actual, expected);
+    /// # }
+    /// ```
+    fn unordered(self) -> Data {
+        self.into_data().unordered()
+    }
+
+    /// Initialize as [`format`][DataFormat] or [`Error`][DataFormat::Error]
+    ///
+    /// This is generally used for `expected` data
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "json")] {
+    /// use snapbox::prelude::*;
+    /// use snapbox::str;
+    ///
+    /// let expected = str![[r#"{"hello": "world"}"#]]
+    ///     .is(snapbox::data::DataFormat::Json);
+    /// assert_eq!(expected.format(), snapbox::data::DataFormat::Json);
+    /// # }
+    /// ```
+    fn is(self, format: DataFormat) -> Data {
+        self.into_data().is(format)
+    }
+
+    /// Initialize as json or [`Error`][DataFormat::Error]
+    ///
+    /// This is generally used for `expected` data
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "json")] {
+    /// use snapbox::prelude::*;
+    /// use snapbox::str;
+    ///
+    /// let expected = str![[r#"{"hello": "world"}"#]]
+    ///     .is_json();
+    /// assert_eq!(expected.format(), snapbox::data::DataFormat::Json);
+    /// # }
+    /// ```
+    #[cfg(feature = "json")]
+    fn is_json(self) -> Data {
+        self.is(DataFormat::Json)
+    }
+
+    #[cfg(feature = "json")]
+    #[deprecated(since = "0.6.13", note = "Replaced with `IntoData::is_json`")]
+    fn json(self) -> Data {
+        self.is_json()
+    }
+
+    /// Initialize as json lines or [`Error`][DataFormat::Error]
+    ///
+    /// This is generally used for `expected` data
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "json")] {
+    /// use snapbox::prelude::*;
+    /// use snapbox::str;
+    ///
+    /// let expected = str![[r#"{"hello": "world"}"#]]
+    ///     .is_jsonlines();
+    /// assert_eq!(expected.format(), snapbox::data::DataFormat::JsonLines);
+    /// # }
+    /// ```
+    #[cfg(feature = "json")]
+    fn is_jsonlines(self) -> Data {
+        self.is(DataFormat::JsonLines)
+    }
+
+    #[cfg(feature = "json")]
+    #[deprecated(since = "0.6.13", note = "Replaced with `IntoData::is_jsonlines`")]
+    fn json_lines(self) -> Data {
+        self.is_jsonlines()
+    }
+
+    /// Initialize as Term SVG
+    ///
+    /// This is generally used for `expected` data
+    #[cfg(feature = "term-svg")]
+    fn is_termsvg(self) -> Data {
+        self.is(DataFormat::TermSvg)
+    }
+
+    #[cfg(feature = "term-svg")]
+    #[deprecated(since = "0.6.13", note = "Replaced with `IntoData::is_termsvg`")]
+    fn term_svg(self) -> Data {
+        self.is_termsvg()
+    }
+
+    /// Override the type this snapshot will be compared against
+    ///
+    /// Normally, the `actual` data is coerced to [`IntoData::is`].
+    /// This allows overriding that so you can store your snapshot in a more readable, diffable
+    /// format.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "json")] {
+    /// use snapbox::prelude::*;
+    /// use snapbox::str;
+    ///
+    /// let expected = str![[r#"{"hello": "world"}"#]]
+    ///     .against(snapbox::data::DataFormat::JsonLines);
+    /// # }
+    /// ```
+    fn against(self, format: DataFormat) -> Data {
+        self.into_data().against(format)
+    }
+
+    /// Initialize as json or [`Error`][DataFormat::Error]
+    ///
+    /// This is generally used for `expected` data
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "json")] {
+    /// use snapbox::prelude::*;
+    /// use snapbox::str;
+    ///
+    /// let expected = str![[r#"{"hello": "world"}"#]]
+    ///     .is_json();
+    /// # }
+    /// ```
+    #[cfg(feature = "json")]
+    fn against_json(self) -> Data {
+        self.against(DataFormat::Json)
+    }
+
+    /// Initialize as json lines or [`Error`][DataFormat::Error]
+    ///
+    /// This is generally used for `expected` data
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "json")] {
+    /// use snapbox::prelude::*;
+    /// use snapbox::str;
+    ///
+    /// let expected = str![[r#"{"hello": "world"}"#]]
+    ///     .against_jsonlines();
+    /// # }
+    /// ```
+    #[cfg(feature = "json")]
+    fn against_jsonlines(self) -> Data {
+        self.against(DataFormat::JsonLines)
+    }
+
+    /// Convert to [`Data`], applying defaults
+    fn into_data(self) -> Data;
+}
+
+impl IntoData for Data {
+    fn into_data(self) -> Data {
+        self
+    }
+}
+
+impl IntoData for &'_ Data {
+    fn into_data(self) -> Data {
+        self.clone()
+    }
+}
+
+impl IntoData for Vec<u8> {
+    fn into_data(self) -> Data {
+        Data::binary(self)
+    }
+}
+
+impl IntoData for &'_ [u8] {
+    fn into_data(self) -> Data {
+        self.to_owned().into_data()
+    }
+}
+
+impl IntoData for String {
+    fn into_data(self) -> Data {
+        Data::text(self)
+    }
+}
+
+impl IntoData for &'_ String {
+    fn into_data(self) -> Data {
+        self.to_owned().into_data()
+    }
+}
+
+impl IntoData for &'_ str {
+    fn into_data(self) -> Data {
+        self.to_owned().into_data()
+    }
+}
+
+impl IntoData for Inline {
+    fn into_data(self) -> Data {
+        let trimmed = self.trimmed();
+        Data::text(trimmed).with_source(self)
     }
 }
 
 /// Declare an expected value for an assert from a file
 ///
 /// This is relative to the source file the macro is run from
+///
+/// Output type: [`Data`]
 ///
 /// ```
 /// # #[cfg(feature = "json")] {
@@ -49,18 +333,20 @@ macro_rules! file {
         $crate::Data::read_from(&path, Some($crate::data::DataFormat:: $type))
     }};
     [$path:literal] => {{
-        let mut path = $crate::current_dir!();
+        let mut path = $crate::utils::current_dir!();
         path.push($path);
         $crate::Data::read_from(&path, None)
     }};
     [$path:literal : $type:ident] => {{
-        let mut path = $crate::current_dir!();
+        let mut path = $crate::utils::current_dir!();
         path.push($path);
         $crate::Data::read_from(&path, Some($crate::data::DataFormat:: $type))
     }};
 }
 
 /// Declare an expected value from within Rust source
+///
+/// Output type: [`Inline`], see [`IntoData`] for operations
 ///
 /// ```
 /// # use snapbox::str;
@@ -69,23 +355,18 @@ macro_rules! file {
 /// "]];
 /// str![r#"{"Foo": 92}"#];
 /// ```
-///
-/// Leading indentation is stripped.
-///
-/// See [`Inline::is`] for declaring the data to be of a certain format.
 #[macro_export]
 macro_rules! str {
     [$data:literal] => { $crate::str![[$data]] };
     [[$data:literal]] => {{
         let position = $crate::data::Position {
-            file: $crate::path::current_rs!(),
+            file: $crate::utils::current_rs!(),
             line: line!(),
             column: column!(),
         };
         let inline = $crate::data::Inline {
             position,
             data: $data,
-            indent: true,
         };
         inline
     }};
@@ -98,8 +379,9 @@ macro_rules! str {
 /// This provides conveniences for tracking the intended format (binary vs text).
 #[derive(Clone, Debug)]
 pub struct Data {
-    inner: DataInner,
-    source: Option<DataSource>,
+    pub(crate) inner: DataInner,
+    pub(crate) source: Option<DataSource>,
+    pub(crate) filters: FilterSet,
 }
 
 #[derive(Clone, Debug)]
@@ -109,37 +391,87 @@ pub(crate) enum DataInner {
     Text(String),
     #[cfg(feature = "json")]
     Json(serde_json::Value),
+    // Always a `Value::Array` but using `Value` for easier bookkeeping
+    #[cfg(feature = "json")]
+    JsonLines(serde_json::Value),
     #[cfg(feature = "term-svg")]
     TermSvg(String),
 }
 
+/// # Constructors
+///
+/// See also
+/// - [`str!`] for inline snapshots
+/// - [`file!`] for external snapshots
+/// - [`ToString`] for verifying a `Display` representation
+/// - [`ToDebug`] for verifying a debug representation
+/// - [`IntoJson`] for verifying the serde representation
+/// - [`IntoData`] for modifying `expected`
 impl Data {
     /// Mark the data as binary (no post-processing)
     pub fn binary(raw: impl Into<Vec<u8>>) -> Self {
-        DataInner::Binary(raw.into()).into()
+        Self::with_inner(DataInner::Binary(raw.into()))
     }
 
     /// Mark the data as text (post-processing)
     pub fn text(raw: impl Into<String>) -> Self {
-        DataInner::Text(raw.into()).into()
+        Self::with_inner(DataInner::Text(raw.into()))
     }
 
     #[cfg(feature = "json")]
     pub fn json(raw: impl Into<serde_json::Value>) -> Self {
-        DataInner::Json(raw.into()).into()
+        Self::with_inner(DataInner::Json(raw.into()))
     }
 
-    fn error(raw: impl Into<crate::Error>, intended: DataFormat) -> Self {
-        DataError {
+    #[cfg(feature = "json")]
+    pub fn jsonlines(raw: impl Into<Vec<serde_json::Value>>) -> Self {
+        Self::with_inner(DataInner::JsonLines(serde_json::Value::Array(raw.into())))
+    }
+
+    fn error(raw: impl Into<crate::assert::Error>, intended: DataFormat) -> Self {
+        Self::with_inner(DataInner::Error(DataError {
             error: raw.into(),
             intended,
-        }
-        .into()
+        }))
     }
 
     /// Empty test data
     pub fn new() -> Self {
         Self::text("")
+    }
+
+    /// Load `expected` data from a file
+    pub fn read_from(path: &std::path::Path, data_format: Option<DataFormat>) -> Self {
+        match Self::try_read_from(path, data_format) {
+            Ok(data) => data,
+            Err(err) => Self::error(err, data_format.unwrap_or_else(|| DataFormat::from(path)))
+                .with_path(path),
+        }
+    }
+
+    /// Remove default [`filters`][crate::filter] from this `expected` result
+    pub fn raw(mut self) -> Self {
+        self.filters = FilterSet::empty().newlines();
+        self
+    }
+
+    /// Treat lines and json arrays as unordered
+    pub fn unordered(mut self) -> Self {
+        self.filters = self.filters.unordered();
+        self
+    }
+}
+
+/// # Assertion frameworks operations
+///
+/// For example, see [`OutputAssert`][crate::cmd::OutputAssert]
+impl Data {
+    pub(crate) fn with_inner(inner: DataInner) -> Self {
+        Self {
+            inner,
+            source: None,
+            filters: FilterSet::new(),
+        }
     }
 
     fn with_source(mut self, source: impl Into<DataSource>) -> Self {
@@ -152,19 +484,10 @@ impl Data {
     }
 
     /// Load `expected` data from a file
-    pub fn read_from(path: &std::path::Path, data_format: Option<DataFormat>) -> Self {
-        match Self::try_read_from(path, data_format) {
-            Ok(data) => data,
-            Err(err) => Self::error(err, data_format.unwrap_or_else(|| DataFormat::from(path)))
-                .with_path(path),
-        }
-    }
-
-    /// Load `expected` data from a file
     pub fn try_read_from(
         path: &std::path::Path,
         data_format: Option<DataFormat>,
-    ) -> Result<Self, crate::Error> {
+    ) -> crate::assert::Result<Self> {
         let data =
             std::fs::read(path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
         let data = Self::binary(data);
@@ -174,7 +497,7 @@ impl Data {
                 let inferred_format = DataFormat::from(path);
                 match inferred_format {
                     #[cfg(feature = "json")]
-                    DataFormat::Json => data.coerce_to(inferred_format),
+                    DataFormat::Json | DataFormat::JsonLines => data.coerce_to(inferred_format),
                     #[cfg(feature = "term-svg")]
                     DataFormat::TermSvg => {
                         let data = data.coerce_to(DataFormat::Text);
@@ -187,13 +510,8 @@ impl Data {
         Ok(data.with_path(path))
     }
 
-    /// Location the data came from
-    pub fn source(&self) -> Option<&DataSource> {
-        self.source.as_ref()
-    }
-
     /// Overwrite a snapshot
-    pub fn write_to(&self, source: &DataSource) -> Result<(), crate::Error> {
+    pub fn write_to(&self, source: &DataSource) -> crate::assert::Result<()> {
         match &source.inner {
             source::DataSourceInner::Path(p) => self.write_to_path(p),
             source::DataSourceInner::Inline(p) => runtime::get()
@@ -203,7 +521,7 @@ impl Data {
     }
 
     /// Overwrite a snapshot
-    pub fn write_to_path(&self, path: &std::path::Path) -> Result<(), crate::Error> {
+    pub fn write_to_path(&self, path: &std::path::Path) -> crate::assert::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
                 format!("Failed to create parent dir for {}: {}", path.display(), e)
@@ -212,13 +530,6 @@ impl Data {
         let bytes = self.to_bytes()?;
         std::fs::write(path, bytes)
             .map_err(|e| format!("Failed to write {}: {}", path.display(), e).into())
-    }
-
-    /// Post-process text
-    ///
-    /// See [utils][crate::utils]
-    pub fn normalize(self, op: impl Normalize) -> Self {
-        op.normalize(self)
     }
 
     /// Return the underlying `String`
@@ -230,21 +541,23 @@ impl Data {
             DataInner::Binary(_) => None,
             DataInner::Text(data) => Some(data.to_owned()),
             #[cfg(feature = "json")]
-            DataInner::Json(value) => Some(serde_json::to_string_pretty(value).unwrap()),
+            DataInner::Json(_) => Some(self.to_string()),
+            #[cfg(feature = "json")]
+            DataInner::JsonLines(_) => Some(self.to_string()),
             #[cfg(feature = "term-svg")]
             DataInner::TermSvg(data) => Some(data.to_owned()),
         }
     }
 
-    pub fn to_bytes(&self) -> Result<Vec<u8>, crate::Error> {
+    pub fn to_bytes(&self) -> crate::assert::Result<Vec<u8>> {
         match &self.inner {
             DataInner::Error(err) => Err(err.error.clone()),
             DataInner::Binary(data) => Ok(data.clone()),
             DataInner::Text(data) => Ok(data.clone().into_bytes()),
             #[cfg(feature = "json")]
-            DataInner::Json(value) => {
-                serde_json::to_vec_pretty(value).map_err(|err| format!("{err}").into())
-            }
+            DataInner::Json(_) => Ok(self.to_string().into_bytes()),
+            #[cfg(feature = "json")]
+            DataInner::JsonLines(_) => Ok(self.to_string().into_bytes()),
             #[cfg(feature = "term-svg")]
             DataInner::TermSvg(data) => Ok(data.clone().into_bytes()),
         }
@@ -254,21 +567,36 @@ impl Data {
     ///
     /// This is generally used for `expected` data
     pub fn is(self, format: DataFormat) -> Self {
+        let filters = self.filters;
+        let source = self.source.clone();
         match self.try_is(format) {
             Ok(new) => new,
-            Err(err) => Self::error(err, format),
+            Err(err) => {
+                let inner = DataInner::Error(DataError {
+                    error: err,
+                    intended: format,
+                });
+                Self {
+                    inner,
+                    source,
+                    filters,
+                }
+            }
         }
     }
 
-    fn try_is(self, format: DataFormat) -> Result<Self, crate::Error> {
+    fn try_is(self, format: DataFormat) -> crate::assert::Result<Self> {
         let original = self.format();
         let source = self.source;
+        let filters = self.filters;
         let inner = match (self.inner, format) {
             (DataInner::Error(inner), _) => DataInner::Error(inner),
             (DataInner::Binary(inner), DataFormat::Binary) => DataInner::Binary(inner),
             (DataInner::Text(inner), DataFormat::Text) => DataInner::Text(inner),
             #[cfg(feature = "json")]
             (DataInner::Json(inner), DataFormat::Json) => DataInner::Json(inner),
+            #[cfg(feature = "json")]
+            (DataInner::JsonLines(inner), DataFormat::JsonLines) => DataInner::JsonLines(inner),
             #[cfg(feature = "term-svg")]
             (DataInner::TermSvg(inner), DataFormat::TermSvg) => DataInner::TermSvg(inner),
             (DataInner::Binary(inner), _) => {
@@ -281,16 +609,21 @@ impl Data {
                     .map_err(|err| err.to_string())?;
                 DataInner::Json(inner)
             }
+            #[cfg(feature = "json")]
+            (DataInner::Text(inner), DataFormat::JsonLines) => {
+                let inner = parse_jsonlines(&inner).map_err(|err| err.to_string())?;
+                DataInner::JsonLines(serde_json::Value::Array(inner))
+            }
             #[cfg(feature = "term-svg")]
             (DataInner::Text(inner), DataFormat::TermSvg) => DataInner::TermSvg(inner),
             (inner, DataFormat::Binary) => {
-                let remake: Self = inner.into();
+                let remake = Self::with_inner(inner);
                 DataInner::Binary(remake.to_bytes().expect("error case handled"))
             }
             // This variant is already covered unless structured data is enabled
             #[cfg(feature = "structured-data")]
             (inner, DataFormat::Text) => {
-                if let Some(str) = Data::from(inner).render() {
+                if let Some(str) = Self::with_inner(inner).render() {
                     DataInner::Text(str)
                 } else {
                     return Err(format!("cannot convert {original:?} to {format:?}").into());
@@ -298,80 +631,137 @@ impl Data {
             }
             (_, _) => return Err(format!("cannot convert {original:?} to {format:?}").into()),
         };
-        Ok(Self { inner, source })
+        Ok(Self {
+            inner,
+            source,
+            filters,
+        })
+    }
+
+    /// Override the type this snapshot will be compared against
+    ///
+    /// Normally, the `actual` data is coerced to [`Data::is`].
+    /// This allows overriding that so you can store your snapshot in a more readable, diffable
+    /// format.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "json")] {
+    /// use snapbox::prelude::*;
+    /// use snapbox::str;
+    ///
+    /// let expected = str![[r#"{"hello": "world"}"#]]
+    ///     .is(snapbox::data::DataFormat::Json)
+    ///     .against(snapbox::data::DataFormat::JsonLines);
+    /// # }
+    /// ```
+    fn against(mut self, format: DataFormat) -> Data {
+        self.filters = self.filters.against(format);
+        self
     }
 
     /// Convert `Self` to [`format`][DataFormat] if possible
     ///
     /// This is generally used on `actual` data to make it match `expected`
     pub fn coerce_to(self, format: DataFormat) -> Self {
-        let mut data = match (self.inner, format) {
-            (DataInner::Error(inner), _) => inner.into(),
-            (inner, DataFormat::Error) => inner.into(),
-            (DataInner::Binary(inner), DataFormat::Binary) => Self::binary(inner),
-            (DataInner::Text(inner), DataFormat::Text) => Self::text(inner),
+        let source = self.source;
+        let filters = self.filters;
+        let inner = match (self.inner, format) {
+            (DataInner::Error(inner), _) => DataInner::Error(inner),
+            (inner, DataFormat::Error) => inner,
+            (DataInner::Binary(inner), DataFormat::Binary) => DataInner::Binary(inner),
+            (DataInner::Text(inner), DataFormat::Text) => DataInner::Text(inner),
             #[cfg(feature = "json")]
-            (DataInner::Json(inner), DataFormat::Json) => Self::json(inner),
+            (DataInner::Json(inner), DataFormat::Json) => DataInner::Json(inner),
+            #[cfg(feature = "json")]
+            (DataInner::JsonLines(inner), DataFormat::JsonLines) => DataInner::JsonLines(inner),
+            #[cfg(feature = "json")]
+            (DataInner::JsonLines(inner), DataFormat::Json) => DataInner::Json(inner),
+            #[cfg(feature = "json")]
+            (DataInner::Json(inner), DataFormat::JsonLines) => DataInner::JsonLines(inner),
             #[cfg(feature = "term-svg")]
-            (DataInner::TermSvg(inner), DataFormat::TermSvg) => inner.into(),
+            (DataInner::TermSvg(inner), DataFormat::TermSvg) => DataInner::TermSvg(inner),
             (DataInner::Binary(inner), _) => {
                 if is_binary(&inner) {
-                    Self::binary(inner)
+                    DataInner::Binary(inner)
                 } else {
                     match String::from_utf8(inner) {
                         Ok(str) => {
                             let coerced = Self::text(str).coerce_to(format);
                             // if the Text cannot be coerced into the correct format
                             // reset it back to Binary
-                            if coerced.format() != format {
+                            let coerced = if coerced.format() != format {
                                 coerced.coerce_to(DataFormat::Binary)
                             } else {
                                 coerced
-                            }
+                            };
+                            coerced.inner
                         }
                         Err(err) => {
                             let bin = err.into_bytes();
-                            Self::binary(bin)
+                            DataInner::Binary(bin)
                         }
                     }
                 }
             }
             #[cfg(feature = "json")]
             (DataInner::Text(inner), DataFormat::Json) => {
-                match serde_json::from_str::<serde_json::Value>(&inner) {
-                    Ok(json) => Self::json(json),
-                    Err(_) => Self::text(inner),
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&inner) {
+                    DataInner::Json(json)
+                } else {
+                    DataInner::Text(inner)
+                }
+            }
+            #[cfg(feature = "json")]
+            (DataInner::Text(inner), DataFormat::JsonLines) => {
+                if let Ok(jsonlines) = parse_jsonlines(&inner) {
+                    DataInner::JsonLines(serde_json::Value::Array(jsonlines))
+                } else {
+                    DataInner::Text(inner)
                 }
             }
             #[cfg(feature = "term-svg")]
             (DataInner::Text(inner), DataFormat::TermSvg) => {
-                DataInner::TermSvg(anstyle_svg::Term::new().render_svg(&inner)).into()
+                DataInner::TermSvg(anstyle_svg::Term::new().render_svg(&inner))
             }
             (inner, DataFormat::Binary) => {
-                let remake: Self = inner.into();
-                Self::binary(remake.to_bytes().expect("error case handled"))
+                let remake = Self::with_inner(inner);
+                DataInner::Binary(remake.to_bytes().expect("error case handled"))
             }
             // This variant is already covered unless structured data is enabled
             #[cfg(feature = "structured-data")]
             (inner, DataFormat::Text) => {
-                let remake: Self = inner.into();
+                let remake = Self::with_inner(inner);
                 if let Some(str) = remake.render() {
-                    Self::text(str)
+                    DataInner::Text(str)
                 } else {
-                    remake
+                    remake.inner
                 }
             }
             // reachable if more than one structured data format is enabled
             #[allow(unreachable_patterns)]
             #[cfg(feature = "json")]
-            (inner, DataFormat::Json) => inner.into(),
+            (inner, DataFormat::Json) => inner,
+            // reachable if more than one structured data format is enabled
+            #[allow(unreachable_patterns)]
+            #[cfg(feature = "json")]
+            (inner, DataFormat::JsonLines) => inner,
             // reachable if more than one structured data format is enabled
             #[allow(unreachable_patterns)]
             #[cfg(feature = "term-svg")]
-            (inner, DataFormat::TermSvg) => inner.into(),
+            (inner, DataFormat::TermSvg) => inner,
         };
-        data.source = self.source;
-        data
+        Self {
+            inner,
+            source,
+            filters,
+        }
+    }
+
+    /// Location the data came from
+    pub fn source(&self) -> Option<&DataSource> {
+        self.source.as_ref()
     }
 
     /// Outputs the current `DataFormat` of the underlying data
@@ -382,6 +772,8 @@ impl Data {
             DataInner::Text(_) => DataFormat::Text,
             #[cfg(feature = "json")]
             DataInner::Json(_) => DataFormat::Json,
+            #[cfg(feature = "json")]
+            DataInner::JsonLines(_) => DataFormat::JsonLines,
             #[cfg(feature = "term-svg")]
             DataInner::TermSvg(_) => DataFormat::TermSvg,
         }
@@ -394,9 +786,17 @@ impl Data {
             DataInner::Text(_) => DataFormat::Text,
             #[cfg(feature = "json")]
             DataInner::Json(_) => DataFormat::Json,
+            #[cfg(feature = "json")]
+            DataInner::JsonLines(_) => DataFormat::JsonLines,
             #[cfg(feature = "term-svg")]
             DataInner::TermSvg(_) => DataFormat::TermSvg,
         }
+    }
+
+    pub(crate) fn against_format(&self) -> DataFormat {
+        self.filters
+            .get_against()
+            .unwrap_or_else(|| self.intended_format())
     }
 
     pub(crate) fn relevant(&self) -> Option<&str> {
@@ -406,26 +806,10 @@ impl Data {
             DataInner::Text(_) => None,
             #[cfg(feature = "json")]
             DataInner::Json(_) => None,
+            #[cfg(feature = "json")]
+            DataInner::JsonLines(_) => None,
             #[cfg(feature = "term-svg")]
-            DataInner::TermSvg(data) => text_elem(data),
-        }
-    }
-}
-
-impl From<DataInner> for Data {
-    fn from(inner: DataInner) -> Self {
-        Data {
-            inner,
-            source: None,
-        }
-    }
-}
-
-impl From<DataError> for Data {
-    fn from(inner: DataError) -> Self {
-        Data {
-            inner: DataInner::Error(inner),
-            source: None,
+            DataInner::TermSvg(data) => term_svg_body(data),
         }
     }
 }
@@ -438,6 +822,14 @@ impl std::fmt::Display for Data {
             DataInner::Text(data) => data.fmt(f),
             #[cfg(feature = "json")]
             DataInner::Json(data) => serde_json::to_string_pretty(data).unwrap().fmt(f),
+            #[cfg(feature = "json")]
+            DataInner::JsonLines(data) => {
+                let array = data.as_array().expect("jsonlines is always an array");
+                for value in array {
+                    writeln!(f, "{}", serde_json::to_string(value).unwrap())?;
+                }
+                Ok(())
+            }
             #[cfg(feature = "term-svg")]
             DataInner::TermSvg(data) => data.fmt(f),
         }
@@ -452,11 +844,13 @@ impl PartialEq for Data {
             (DataInner::Text(left), DataInner::Text(right)) => left == right,
             #[cfg(feature = "json")]
             (DataInner::Json(left), DataInner::Json(right)) => left == right,
+            #[cfg(feature = "json")]
+            (DataInner::JsonLines(left), DataInner::JsonLines(right)) => left == right,
             #[cfg(feature = "term-svg")]
             (DataInner::TermSvg(left), DataInner::TermSvg(right)) => {
                 // HACK: avoid including `width` and `height` in the comparison
-                let left = text_elem(left.as_str());
-                let right = text_elem(right.as_str());
+                let left = term_svg_body(left.as_str()).unwrap_or(left.as_str());
+                let right = term_svg_body(right.as_str()).unwrap_or(right.as_str());
                 left == right
             }
             (_, _) => false,
@@ -466,7 +860,7 @@ impl PartialEq for Data {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DataError {
-    error: crate::Error,
+    error: crate::assert::Error,
     intended: DataFormat,
 }
 
@@ -476,8 +870,28 @@ impl std::fmt::Display for DataError {
     }
 }
 
+#[cfg(feature = "json")]
+fn parse_jsonlines(text: &str) -> Result<Vec<serde_json::Value>, serde_json::Error> {
+    let mut lines = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let json = serde_json::from_str::<serde_json::Value>(line)?;
+        lines.push(json);
+    }
+    Ok(lines)
+}
+
 #[cfg(feature = "term-svg")]
-fn text_elem(svg: &str) -> Option<&str> {
+fn term_svg_body(svg: &str) -> Option<&str> {
+    let (_header, body, _footer) = split_term_svg(svg)?;
+    Some(body)
+}
+
+#[cfg(feature = "term-svg")]
+pub(crate) fn split_term_svg(svg: &str) -> Option<(&str, &str, &str)> {
     let open_elem_start_idx = svg.find("<text")?;
     _ = svg[open_elem_start_idx..].find('>')?;
     let open_elem_line_start_idx = svg[..open_elem_start_idx]
@@ -492,8 +906,10 @@ fn text_elem(svg: &str) -> Option<&str> {
         .map(|idx| idx + close_elem_start_idx + 1)
         .unwrap_or(svg.len());
 
+    let header = &svg[..open_elem_line_start_idx];
     let body = &svg[open_elem_line_start_idx..close_elem_line_end_idx];
-    Some(body)
+    let footer = &svg[close_elem_line_end_idx..];
+    Some((header, body, footer))
 }
 
 impl Eq for Data {}
@@ -506,37 +922,43 @@ impl Default for Data {
 
 impl<'d> From<&'d Data> for Data {
     fn from(other: &'d Data) -> Self {
-        other.clone()
+        other.into_data()
     }
 }
 
 impl From<Vec<u8>> for Data {
     fn from(other: Vec<u8>) -> Self {
-        Self::binary(other)
+        other.into_data()
     }
 }
 
 impl<'b> From<&'b [u8]> for Data {
     fn from(other: &'b [u8]) -> Self {
-        other.to_owned().into()
+        other.into_data()
     }
 }
 
 impl From<String> for Data {
     fn from(other: String) -> Self {
-        Self::text(other)
+        other.into_data()
     }
 }
 
 impl<'s> From<&'s String> for Data {
     fn from(other: &'s String) -> Self {
-        other.clone().into()
+        other.into_data()
     }
 }
 
 impl<'s> From<&'s str> for Data {
     fn from(other: &'s str) -> Self {
-        other.to_owned().into()
+        other.into_data()
+    }
+}
+
+impl From<Inline> for Data {
+    fn from(other: Inline) -> Self {
+        other.into_data()
     }
 }
 
@@ -576,4 +998,90 @@ pub fn generate_snapshot_path(fn_path: &str, format: Option<DataFormat>) -> std:
     path.push('.');
     path.push_str(format.unwrap_or(DataFormat::Text).ext());
     path.into()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[track_caller]
+    fn validate_cases(cases: &[(&str, bool)], input_format: DataFormat) {
+        for (input, valid) in cases.iter().copied() {
+            let (expected_is_format, expected_coerced_format) = if valid {
+                (input_format, input_format)
+            } else {
+                (DataFormat::Error, DataFormat::Text)
+            };
+
+            let actual_is = Data::text(input).is(input_format);
+            assert_eq!(
+                actual_is.format(),
+                expected_is_format,
+                "\n{input}\n{actual_is}"
+            );
+
+            let actual_coerced = Data::text(input).coerce_to(input_format);
+            assert_eq!(
+                actual_coerced.format(),
+                expected_coerced_format,
+                "\n{input}\n{actual_coerced}"
+            );
+
+            if valid {
+                assert_eq!(actual_is, actual_coerced);
+
+                let rendered = actual_is.render().unwrap();
+                let bytes = actual_is.to_bytes().unwrap();
+                assert_eq!(rendered, std::str::from_utf8(&bytes).unwrap());
+
+                assert_eq!(Data::text(&rendered).is(input_format), actual_is);
+            }
+        }
+    }
+
+    #[test]
+    fn text() {
+        let cases = [("", true), ("good", true), ("{}", true), ("\"\"", true)];
+        validate_cases(&cases, DataFormat::Text);
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn json() {
+        let cases = [("", false), ("bad", false), ("{}", true), ("\"\"", true)];
+        validate_cases(&cases, DataFormat::Json);
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn jsonlines() {
+        let cases = [
+            ("", true),
+            ("bad", false),
+            ("{}", true),
+            ("\"\"", true),
+            (
+                "
+{}
+{}
+", true,
+            ),
+            (
+                "
+{}
+
+{}
+", true,
+            ),
+            (
+                "
+{}
+bad
+{}
+",
+                false,
+            ),
+        ];
+        validate_cases(&cases, DataFormat::JsonLines);
+    }
 }

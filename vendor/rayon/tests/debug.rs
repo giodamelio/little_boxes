@@ -5,7 +5,7 @@ fn check<I>(iter: I)
 where
     I: ParallelIterator + Debug,
 {
-    println!("{:?}", iter);
+    println!("{iter:?}");
 }
 
 #[test]
@@ -121,6 +121,8 @@ fn debug_vec() {
     let mut v: Vec<_> = (0..10).collect();
     check(v.par_iter());
     check(v.par_iter_mut());
+    check(v.par_chunk_by(i32::eq));
+    check(v.par_chunk_by_mut(i32::eq));
     check(v.par_chunks(42));
     check(v.par_chunks_exact(42));
     check(v.par_chunks_mut(42));
@@ -130,6 +132,7 @@ fn debug_vec() {
     check(v.par_rchunks_mut(42));
     check(v.par_rchunks_exact_mut(42));
     check(v.par_windows(42));
+    check(v.par_array_windows::<42>());
     check(v.par_split(|x| x % 3 == 0));
     check(v.par_split_inclusive(|x| x % 3 == 0));
     check(v.par_split_mut(|x| x % 3 == 0));
@@ -205,7 +208,7 @@ fn debug_once() {
 fn debug_repeat() {
     let x: Option<i32> = None;
     check(rayon::iter::repeat(x));
-    check(rayon::iter::repeatn(x, 10));
+    check(rayon::iter::repeat_n(x, 10));
 }
 
 #[test]

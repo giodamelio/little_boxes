@@ -1,10 +1,8 @@
 # toml_edit
 
-[![Build Status](https://github.com/toml-rs/toml/workflows/Continuous%20integration/badge.svg)](https://github.com/toml-rs/toml/actions)
-[![codecov](https://codecov.io/gh/toml-rs/toml/branch/master/graph/badge.svg)](https://codecov.io/gh/toml-rs/toml)
-[![crates.io](https://img.shields.io/crates/v/toml_edit.svg)](https://crates.io/crates/toml_edit)
-[![docs](https://docs.rs/toml_edit/badge.svg)](https://docs.rs/toml_edit)
-[![Join the chat at https://gitter.im/toml_edit/Lobby](https://badges.gitter.im/a.svg)](https://gitter.im/toml_edit/Lobby)
+[![Documentation](https://img.shields.io/badge/docs-master-blue.svg)](https://docs.rs/toml_edit)
+![License](https://img.shields.io/crates/l/toml_edit.svg)
+[![Crates Status](https://img.shields.io/crates/v/toml_edit.svg)](https://crates.io/crates/toml_edit)
 
 
 This crate allows you to parse and modify toml
@@ -16,14 +14,14 @@ relative order* of items.
 ## Example
 
 ```rust
-use toml_edit::{Document, value};
+use toml_edit::{DocumentMut, value};
 
 fn main() {
     let toml = r#"
 "hello" = 'toml!' # comment
 ['a'.b]
     "#;
-    let mut doc = toml.parse::<Document>().expect("invalid doc");
+    let mut doc = toml.parse::<DocumentMut>().expect("invalid doc");
     assert_eq!(doc.to_string(), toml);
     // let's add a new key/value pair inside a.b: c = {d = "hello"}
     doc["a"]["b"]["c"]["d"] = value("hello");
@@ -48,9 +46,14 @@ Things it does not preserve:
 
 Licensed under either of
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+* Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or <https://www.apache.org/licenses/LICENSE-2.0>)
+* MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/license/mit>)
+
+at your option.
 
 ### Contribution
 
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
+Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in the work by you, as defined in the Apache-2.0
+license, shall be dual-licensed as above, without any additional terms or
+conditions.

@@ -13,7 +13,7 @@ The `One` searcher also provides a [`One::count`] routine for efficiently
 counting the number of times a single byte occurs in a haystack. This is
 useful, for example, for counting the number of lines in a haystack. This
 routine exists because it is usually faster, especially with a high match
-count, then using [`One::find`] repeatedly. ([`OneIter`] specializes its
+count, than using [`One::find`] repeatedly. ([`OneIter`] specializes its
 `Iterator::count` implementation to use this routine.)
 
 Only one, two and three bytes are supported because three bytes is about
@@ -456,7 +456,7 @@ impl Two {
         }
 
         // And now we start our search at a guaranteed aligned position.
-        // The first iteration of the loop below will overlap with the the
+        // The first iteration of the loop below will overlap with the
         // unaligned chunk above in cases where the search starts at an
         // unaligned offset, but that's okay as we're only here if that
         // above didn't find a match.
@@ -720,7 +720,7 @@ impl Three {
         }
 
         // And now we start our search at a guaranteed aligned position.
-        // The first iteration of the loop below will overlap with the the
+        // The first iteration of the loop below will overlap with the
         // unaligned chunk above in cases where the search starts at an
         // unaligned offset, but that's okay as we're only here if that
         // above didn't find a match.
@@ -992,5 +992,31 @@ mod tests {
         let haystack = "01234567\x0b\n\x0b\n\x0b\n\x0b\nx";
         let count = One::new(b'\n').count(haystack.as_bytes());
         assert_eq!(4, count);
+    }
+
+    // A test[1] that failed on some big endian targets after a perf
+    // improvement was merged[2].
+    //
+    // At first it seemed like the test suite somehow missed the regression,
+    // but in actuality, CI was not running tests with `cross` but instead with
+    // `cargo` specifically. This is because those steps were using `cargo`
+    // instead of `${{ env.CARGO }}`. So adding this regression test doesn't
+    // really help catch that class of failure, but we add it anyway for good
+    // measure.
+    //
+    // [1]: https://github.com/BurntSushi/memchr/issues/152
+    // [2]: https://github.com/BurntSushi/memchr/pull/151
+    #[test]
+    fn regression_big_endian1() {
+        assert_eq!(One::new(b':').find(b"1:23"), Some(1));
+    }
+
+    // Interestingly, I couldn't get `regression_big_endian1` to fail for me
+    // on the `powerpc64-unknown-linux-gnu` target. But I found another case
+    // through quickcheck that does.
+    #[test]
+    fn regression_big_endian2() {
+        let data = [0, 0, 0, 0, 0, 0, 0, 0];
+        assert_eq!(One::new(b'\x00').find(&data), Some(0));
     }
 }

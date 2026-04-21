@@ -11,21 +11,22 @@ extern crate alloc;
 use alloc::borrow::ToOwned;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-
 use core::convert::TryFrom;
 use core::fmt::{self, Display, Formatter, Write};
+#[cfg(not(feature = "no_std"))]
+use core::ops::Mul;
 use core::ops::{Add, Sub};
 use core::str::FromStr;
 use core::time::Duration;
-use core::{iter, str};
-
-#[cfg(not(feature = "no_std"))]
-use core::ops::Mul;
-
+use core::{iter, mem, str};
 #[cfg(not(feature = "no_std"))]
 use std::time::Instant;
 
-use log::{debug, trace};
+use bitflags::bitflags;
+#[doc(inline)]
+pub use cursor_icon;
+use cursor_icon::CursorIcon;
+use log::debug;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -37,14 +38,14 @@ const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
 /// Maximum number of bytes read in one synchronized update (2MiB).
 const SYNC_BUFFER_SIZE: usize = 0x20_0000;
 
-/// Number of bytes in the synchronized update DCS sequence before the passthrough parameters.
-const SYNC_ESCAPE_START_LEN: usize = 5;
+/// Number of bytes in the BSU/ESU CSI sequences.
+const SYNC_ESCAPE_LEN: usize = 8;
 
-/// Start of the DCS sequence for beginning synchronized updates.
-const SYNC_START_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] = [b'\x1b', b'P', b'=', b'1', b's'];
+/// BSU CSI sequence for beginning or extending synchronized updates.
+const BSU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026h";
 
-/// Start of the DCS sequence for terminating synchronized updates.
-const SYNC_END_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] = [b'\x1b', b'P', b'=', b'2', b's'];
+/// ESU CSI sequence for terminating synchronized updates.
+const ESU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026l";
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Hyperlink {
@@ -114,7 +115,7 @@ impl Mul<f32> for Rgb {
             b: (f32::from(self.b) * rhs).clamp(0.0, 255.0) as u8,
         };
 
-        trace!("Scaling RGB by {} from {:?} to {:?}", rhs, self, result);
+        log::trace!("Scaling RGB by {} from {:?} to {:?}", rhs, self, result);
         result
     }
 }
@@ -163,9 +164,9 @@ impl FromStr for Rgb {
 
         match u32::from_str_radix(chars, 16) {
             Ok(mut color) => {
-                let b = (color & 0xff) as u8;
+                let b = (color & 0xFF) as u8;
                 color >>= 8;
-                let g = (color & 0xff) as u8;
+                let g = (color & 0xFF) as u8;
                 color >>= 8;
                 let r = color as u8;
                 Ok(Rgb { r, g, b })
@@ -232,14 +233,8 @@ fn parse_number(input: &[u8]) -> Option<u8> {
     let mut num: u8 = 0;
     for c in input {
         let c = *c as char;
-        if let Some(digit) = c.to_digit(10) {
-            num = match num.checked_mul(10).and_then(|v| v.checked_add(digit as u8)) {
-                Some(v) => v,
-                None => return None,
-            }
-        } else {
-            return None;
-        }
+        let digit = c.to_digit(10)?;
+        num = num.checked_mul(10).and_then(|v| v.checked_add(digit as u8))?;
     }
     Some(num)
 }
@@ -250,9 +245,6 @@ struct ProcessorState<T: Timeout> {
     /// Last processed character for repetition.
     preceding_char: Option<char>,
 
-    /// DCS sequence waiting for termination.
-    dcs: Option<Dcs>,
-
     /// State for synchronized terminal updates.
     sync_state: SyncState<T>,
 }
@@ -262,34 +254,18 @@ struct SyncState<T: Timeout> {
     /// Handler for synchronized updates.
     timeout: T,
 
-    /// Sync DCS waiting for termination sequence.
-    pending_dcs: Option<Dcs>,
-
     /// Bytes read during the synchronized update.
     buffer: Vec<u8>,
 }
 
 impl<T: Timeout> Default for SyncState<T> {
     fn default() -> Self {
-        Self {
-            buffer: Vec::with_capacity(SYNC_BUFFER_SIZE),
-            pending_dcs: None,
-            timeout: T::default(),
-        }
+        Self { buffer: Vec::with_capacity(SYNC_BUFFER_SIZE), timeout: Default::default() }
     }
 }
 
-/// Pending DCS sequence.
-#[derive(Debug)]
-enum Dcs {
-    /// Begin of the synchronized update.
-    SyncStart,
-
-    /// End of the synchronized update.
-    SyncEnd,
-}
-
-/// The processor wraps a `crate::Parser` to ultimately call methods on a Handler.
+/// The processor wraps a `crate::Parser` to ultimately call methods on a
+/// Handler.
 #[cfg(not(feature = "no_std"))]
 #[derive(Default)]
 pub struct Processor<T: Timeout = StdSyncHandler> {
@@ -297,7 +273,8 @@ pub struct Processor<T: Timeout = StdSyncHandler> {
     parser: crate::Parser,
 }
 
-/// The processor wraps a `crate::Parser` to ultimately call methods on a Handler.
+/// The processor wraps a `crate::Parser` to ultimately call methods on a
+/// Handler.
 #[cfg(feature = "no_std")]
 #[derive(Default)]
 pub struct Processor<T: Timeout> {
@@ -318,15 +295,19 @@ impl<T: Timeout> Processor<T> {
 
     /// Process a new byte from the PTY.
     #[inline]
-    pub fn advance<H>(&mut self, handler: &mut H, byte: u8)
+    pub fn advance<H>(&mut self, handler: &mut H, bytes: &[u8])
     where
         H: Handler,
     {
-        if self.state.sync_state.timeout.pending_timeout() {
-            self.advance_sync(handler, byte);
-        } else {
-            let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, byte);
+        let mut processed = 0;
+        while processed != bytes.len() {
+            if self.state.sync_state.timeout.pending_timeout() {
+                processed += self.advance_sync(handler, &bytes[processed..]);
+            } else {
+                let mut performer = Performer::new(&mut self.state, handler);
+                processed +=
+                    self.parser.advance_until_terminated(&mut performer, &bytes[processed..]);
+            }
         }
     }
 
@@ -335,16 +316,45 @@ impl<T: Timeout> Processor<T> {
     where
         H: Handler,
     {
-        // Process all synchronized bytes.
-        for i in 0..self.state.sync_state.buffer.len() {
-            let byte = self.state.sync_state.buffer[i];
-            let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, byte);
-        }
+        self.stop_sync_internal(handler, None);
+    }
 
-        // Resetting state after processing makes sure we don't interpret buffered sync escapes.
-        self.state.sync_state.buffer.clear();
-        self.state.sync_state.timeout.clear_timeout();
+    /// End a synchronized update.
+    ///
+    /// The `bsu_offset` parameter should be passed if the sync buffer contains
+    /// a new BSU escape that is not part of the current synchronized
+    /// update.
+    fn stop_sync_internal<H>(&mut self, handler: &mut H, bsu_offset: Option<usize>)
+    where
+        H: Handler,
+    {
+        // Process all synchronized bytes.
+        //
+        // NOTE: We do not use `advance_until_terminated` here since BSU sequences are
+        // processed automatically during the synchronized update.
+        let buffer = mem::take(&mut self.state.sync_state.buffer);
+        let offset = bsu_offset.unwrap_or(buffer.len());
+        let mut performer = Performer::new(&mut self.state, handler);
+        self.parser.advance(&mut performer, &buffer[..offset]);
+        self.state.sync_state.buffer = buffer;
+
+        match bsu_offset {
+            // Just clear processed bytes if there is a new BSU.
+            //
+            // NOTE: We do not need to re-process for a new ESU since the `advance_sync`
+            // function checks for BSUs in reverse.
+            Some(bsu_offset) => {
+                let new_len = self.state.sync_state.buffer.len() - bsu_offset;
+                self.state.sync_state.buffer.copy_within(bsu_offset.., 0);
+                self.state.sync_state.buffer.truncate(new_len);
+            },
+            // Report mode and clear state if no new BSU is present.
+            None => {
+                handler.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
+                self.state.sync_state.timeout.clear_timeout();
+                self.state.sync_state.buffer.clear();
+            },
+        }
     }
 
     /// Number of bytes in the synchronization buffer.
@@ -354,53 +364,56 @@ impl<T: Timeout> Processor<T> {
     }
 
     /// Process a new byte during a synchronized update.
+    ///
+    /// Returns the number of bytes processed.
     #[cold]
-    fn advance_sync<H>(&mut self, handler: &mut H, byte: u8)
+    fn advance_sync<H>(&mut self, handler: &mut H, bytes: &[u8]) -> usize
     where
         H: Handler,
     {
-        self.state.sync_state.buffer.push(byte);
+        // Advance sync parser or stop sync if we'd exceed the maximum buffer size.
+        if self.state.sync_state.buffer.len() + bytes.len() >= SYNC_BUFFER_SIZE - 1 {
+            // Terminate the synchronized update.
+            self.stop_sync_internal(handler, None);
 
-        // Handle sync DCS escape sequences.
-        match self.state.sync_state.pending_dcs {
-            Some(_) => self.advance_sync_dcs_end(handler, byte),
-            None => self.advance_sync_dcs_start(),
+            // Just parse the bytes normally.
+            let mut performer = Performer::new(&mut self.state, handler);
+            self.parser.advance_until_terminated(&mut performer, bytes)
+        } else {
+            self.state.sync_state.buffer.extend(bytes);
+            self.advance_sync_csi(handler, bytes.len());
+            bytes.len()
         }
     }
 
-    /// Find the start of sync DCS sequences.
-    fn advance_sync_dcs_start(&mut self) {
-        // Get the last few bytes for comparison.
-        let len = self.state.sync_state.buffer.len();
-        let offset = len.saturating_sub(SYNC_ESCAPE_START_LEN);
-        let end = &self.state.sync_state.buffer[offset..];
-
-        // Check for extension/termination of the synchronized update.
-        if end == SYNC_START_ESCAPE_START {
-            self.state.sync_state.pending_dcs = Some(Dcs::SyncStart);
-        } else if end == SYNC_END_ESCAPE_START || len >= SYNC_BUFFER_SIZE - 1 {
-            self.state.sync_state.pending_dcs = Some(Dcs::SyncEnd);
-        }
-    }
-
-    /// Parse the DCS termination sequence for synchronized updates.
-    fn advance_sync_dcs_end<H>(&mut self, handler: &mut H, byte: u8)
+    /// Handle BSU/ESU CSI sequences during synchronized update.
+    fn advance_sync_csi<H>(&mut self, handler: &mut H, new_bytes: usize)
     where
         H: Handler,
     {
-        match byte {
-            // Ignore DCS passthrough characters.
-            0x00..=0x17 | 0x19 | 0x1c..=0x7f | 0xa0..=0xff => (),
-            // Cancel the DCS sequence.
-            0x18 | 0x1a | 0x80..=0x9f => self.state.sync_state.pending_dcs = None,
-            // Dispatch on ESC.
-            0x1b => match self.state.sync_state.pending_dcs.take() {
-                Some(Dcs::SyncStart) => {
-                    self.state.sync_state.timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
-                },
-                Some(Dcs::SyncEnd) => self.stop_sync(handler),
-                None => (),
-            },
+        // Get constraints within which a new escape character might be relevant.
+        let buffer_len = self.state.sync_state.buffer.len();
+        let start_offset = (buffer_len - new_bytes).saturating_sub(SYNC_ESCAPE_LEN - 1);
+        let end_offset = buffer_len.saturating_sub(SYNC_ESCAPE_LEN - 1);
+        let search_buffer = &self.state.sync_state.buffer[start_offset..end_offset];
+
+        // Search for termination/extension escapes in the added bytes.
+        //
+        // NOTE: It is technically legal to specify multiple private modes in the same
+        // escape, but we only allow EXACTLY `\e[?2026h`/`\e[?2026l` to keep the parser
+        // more simple.
+        let mut bsu_offset = None;
+        for index in memchr::memchr_iter(0x1B, search_buffer).rev() {
+            let offset = start_offset + index;
+            let escape = &self.state.sync_state.buffer[offset..offset + SYNC_ESCAPE_LEN];
+
+            if escape == BSU_CSI {
+                self.state.sync_state.timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
+                bsu_offset = Some(offset);
+            } else if escape == ESU_CSI {
+                self.stop_sync_internal(handler, bsu_offset);
+                break;
+            }
         }
     }
 }
@@ -412,13 +425,16 @@ impl<T: Timeout> Processor<T> {
 struct Performer<'a, H: Handler, T: Timeout> {
     state: &'a mut ProcessorState<T>,
     handler: &'a mut H,
+
+    /// Whether the parser should be prematurely terminated.
+    terminated: bool,
 }
 
 impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
     /// Create a performer.
     #[inline]
     pub fn new<'b>(state: &'b mut ProcessorState<T>, handler: &'b mut H) -> Performer<'b, H, T> {
-        Performer { state, handler }
+        Performer { state, handler, terminated: Default::default() }
     }
 }
 
@@ -613,7 +629,19 @@ pub trait Handler {
     fn set_mode(&mut self, _mode: Mode) {}
 
     /// Unset mode.
-    fn unset_mode(&mut self, _: Mode) {}
+    fn unset_mode(&mut self, _mode: Mode) {}
+
+    /// DECRPM - report mode.
+    fn report_mode(&mut self, _mode: Mode) {}
+
+    /// Set private mode.
+    fn set_private_mode(&mut self, _mode: PrivateMode) {}
+
+    /// Unset private mode.
+    fn unset_private_mode(&mut self, _mode: PrivateMode) {}
+
+    /// DECRPM - report private mode.
+    fn report_private_mode(&mut self, _mode: PrivateMode) {}
 
     /// DECSTBM - Set the terminal scrolling region.
     fn set_scrolling_region(&mut self, _top: usize, _bottom: Option<usize>) {}
@@ -668,6 +696,121 @@ pub trait Handler {
 
     /// Set hyperlink.
     fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}
+
+    /// Set mouse cursor icon.
+    fn set_mouse_cursor_icon(&mut self, _: CursorIcon) {}
+
+    /// Report current keyboard mode.
+    fn report_keyboard_mode(&mut self) {}
+
+    /// Push keyboard mode into the keyboard mode stack.
+    fn push_keyboard_mode(&mut self, _mode: KeyboardModes) {}
+
+    /// Pop the given amount of keyboard modes from the
+    /// keyboard mode stack.
+    fn pop_keyboard_modes(&mut self, _to_pop: u16) {}
+
+    /// Set the [`keyboard mode`] using the given [`behavior`].
+    ///
+    /// [`keyboard mode`]: crate::ansi::KeyboardModes
+    /// [`behavior`]: crate::ansi::KeyboardModesApplyBehavior
+    fn set_keyboard_mode(&mut self, _mode: KeyboardModes, _behavior: KeyboardModesApplyBehavior) {}
+
+    /// Set XTerm's [`ModifyOtherKeys`] option.
+    fn set_modify_other_keys(&mut self, _mode: ModifyOtherKeys) {}
+
+    /// Report XTerm's [`ModifyOtherKeys`] state.
+    ///
+    /// The output is of form `CSI > 4 ; mode m`.
+    fn report_modify_other_keys(&mut self) {}
+
+    // Set SCP control.
+    fn set_scp(&mut self, _char_path: ScpCharPath, _update_mode: ScpUpdateMode) {}
+}
+
+bitflags! {
+    /// A set of [`kitty keyboard protocol'] modes.
+    ///
+    /// [`kitty keyboard protocol']: https://sw.kovidgoyal.net/kitty/keyboard-protocol
+    #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct KeyboardModes : u8 {
+        /// No keyboard protocol mode is set.
+        const NO_MODE                 = 0b0000_0000;
+        /// Report `Esc`, `alt` + `key`, `ctrl` + `key`, `ctrl` + `alt` + `key`, `shift`
+        /// + `alt` + `key` keys using `CSI u` sequence instead of raw ones.
+        const DISAMBIGUATE_ESC_CODES  = 0b0000_0001;
+        /// Report key presses, release, and repetition alongside the escape. Key events
+        /// that result in text are reported as plain UTF-8, unless the
+        /// [`Self::REPORT_ALL_KEYS_AS_ESC`] is enabled.
+        const REPORT_EVENT_TYPES      = 0b0000_0010;
+        /// Additionally report shifted key an dbase layout key.
+        const REPORT_ALTERNATE_KEYS   = 0b0000_0100;
+        /// Report every key as an escape sequence.
+        const REPORT_ALL_KEYS_AS_ESC  = 0b0000_1000;
+        /// Report the text generated by the key event.
+        const REPORT_ASSOCIATED_TEXT  = 0b0001_0000;
+    }
+}
+
+/// XTMODKEYS modifyOtherKeys state.
+///
+/// This only applies to keys corresponding to ascii characters.
+///
+/// For the details on how to implement the mode handling correctly, consult
+/// [`XTerm's implementation`] and the [`output`] of XTerm's provided [`perl
+/// script`]. Some libraries and implementations also use the [`fixterms`]
+/// definition of the `CSI u`.
+///
+/// The end escape sequence has a `CSI char; modifiers u` form while the
+/// original `CSI 27 ; modifier ; char ~`. The clients should prefer the `CSI
+/// u`, since it has more adoption.
+///
+/// [`XTerm's implementation`]: https://invisible-island.net/xterm/modified-keys.html
+/// [`perl script`]: https://github.com/ThomasDickey/xterm-snapshots/blob/master/vttests/modify-keys.pl
+/// [`output`]: https://github.com/alacritty/vte/blob/master/doc/modifyOtherKeys-example.txt
+/// [`fixterms`]: http://www.leonerd.org.uk/hacks/fixterms/
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ModifyOtherKeys {
+    /// Reset the state.
+    Reset,
+    /// Enables this feature except for keys with well-known behavior, e.g.,
+    /// Tab, Backspace and some special control character cases which are
+    /// built into the X11 library (e.g., Control-Space to make a NUL, or
+    /// Control-3 to make an Escape character).
+    ///
+    /// Escape sequences shouldn't be emitted under the following circumstances:
+    /// - When the key is in range of `[64;127]` and the modifier is either
+    ///   Control or Shift
+    /// - When the key combination is a known control combination alias
+    ///
+    /// For more details, consult the [`example`] for the suggested translation.
+    ///
+    /// [`example`]: https://github.com/alacritty/vte/blob/master/doc/modifyOtherKeys-example.txt
+    EnableExceptWellDefined,
+    /// Enables this feature for all keys including the exceptions of
+    /// [`Self::EnableExceptWellDefined`].  XTerm still ignores the special
+    /// cases built into the X11 library. Any shifted (modified) ordinary
+    /// key send an escape sequence. The Alt- and Meta- modifiers cause
+    /// XTerm to send escape sequences.
+    ///
+    /// For more details, consult the [`example`] for the suggested translation.
+    ///
+    /// [`example`]: https://github.com/alacritty/vte/blob/master/doc/modifyOtherKeys-example.txt
+    EnableAll,
+}
+
+/// Describes how the new [`KeyboardModes`] should be applied.
+#[repr(u8)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub enum KeyboardModesApplyBehavior {
+    /// Replace the active flags with the new ones.
+    #[default]
+    Replace,
+    /// Merge the given flags with currently active ones.
+    Union,
+    /// Remove the given flags from the active ones.
+    Difference,
 }
 
 /// Terminal cursor configuration.
@@ -678,9 +821,10 @@ pub struct CursorStyle {
 }
 
 /// Terminal cursor shape.
-#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(Debug, Default, Eq, PartialEq, Copy, Clone, Hash)]
 pub enum CursorShape {
     /// Cursor is a block like `▒`.
+    #[default]
     Block,
 
     /// Cursor is an underscore like `_`.
@@ -696,16 +840,99 @@ pub enum CursorShape {
     Hidden,
 }
 
-impl Default for CursorShape {
-    fn default() -> CursorShape {
-        CursorShape::Block
+/// Wrapper for the ANSI modes.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum Mode {
+    /// Known ANSI mode.
+    Named(NamedMode),
+    /// Unidentified publc mode.
+    Unknown(u16),
+}
+
+impl Mode {
+    fn new(mode: u16) -> Self {
+        match mode {
+            4 => Self::Named(NamedMode::Insert),
+            20 => Self::Named(NamedMode::LineFeedNewLine),
+            _ => Self::Unknown(mode),
+        }
+    }
+
+    /// Get the raw value of the mode.
+    pub fn raw(self) -> u16 {
+        match self {
+            Self::Named(named) => named as u16,
+            Self::Unknown(mode) => mode,
+        }
     }
 }
 
-/// Terminal modes.
-#[derive(Debug, Eq, PartialEq)]
-pub enum Mode {
-    /// ?1
+impl From<NamedMode> for Mode {
+    fn from(value: NamedMode) -> Self {
+        Self::Named(value)
+    }
+}
+
+/// ANSI modes.
+#[repr(u16)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum NamedMode {
+    /// IRM Insert Mode.
+    Insert = 4,
+    LineFeedNewLine = 20,
+}
+
+/// Wrapper for the private DEC modes.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum PrivateMode {
+    /// Known private mode.
+    Named(NamedPrivateMode),
+    /// Unknown private mode.
+    Unknown(u16),
+}
+
+impl PrivateMode {
+    fn new(mode: u16) -> Self {
+        match mode {
+            1 => Self::Named(NamedPrivateMode::CursorKeys),
+            3 => Self::Named(NamedPrivateMode::ColumnMode),
+            6 => Self::Named(NamedPrivateMode::Origin),
+            7 => Self::Named(NamedPrivateMode::LineWrap),
+            12 => Self::Named(NamedPrivateMode::BlinkingCursor),
+            25 => Self::Named(NamedPrivateMode::ShowCursor),
+            1000 => Self::Named(NamedPrivateMode::ReportMouseClicks),
+            1002 => Self::Named(NamedPrivateMode::ReportCellMouseMotion),
+            1003 => Self::Named(NamedPrivateMode::ReportAllMouseMotion),
+            1004 => Self::Named(NamedPrivateMode::ReportFocusInOut),
+            1005 => Self::Named(NamedPrivateMode::Utf8Mouse),
+            1006 => Self::Named(NamedPrivateMode::SgrMouse),
+            1007 => Self::Named(NamedPrivateMode::AlternateScroll),
+            1042 => Self::Named(NamedPrivateMode::UrgencyHints),
+            1049 => Self::Named(NamedPrivateMode::SwapScreenAndSetRestoreCursor),
+            2004 => Self::Named(NamedPrivateMode::BracketedPaste),
+            2026 => Self::Named(NamedPrivateMode::SyncUpdate),
+            _ => Self::Unknown(mode),
+        }
+    }
+
+    /// Get the raw value of the mode.
+    pub fn raw(self) -> u16 {
+        match self {
+            Self::Named(named) => named as u16,
+            Self::Unknown(mode) => mode,
+        }
+    }
+}
+
+impl From<NamedPrivateMode> for PrivateMode {
+    fn from(value: NamedPrivateMode) -> Self {
+        Self::Named(value)
+    }
+}
+
+/// Private DEC modes.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum NamedPrivateMode {
     CursorKeys = 1,
     /// Select 80 or 132 columns per page (DECCOLM).
     ///
@@ -719,88 +946,22 @@ pub enum Mode {
     /// * resets DECLRMM to unavailable
     /// * clears data from the status line (if set to host-writable)
     ColumnMode = 3,
-    /// IRM Insert Mode.
-    ///
-    /// NB should be part of non-private mode enum.
-    ///
-    /// * `CSI 4 h` change to insert mode
-    /// * `CSI 4 l` reset to replacement mode
-    Insert = 4,
-    /// ?6
     Origin = 6,
-    /// ?7
     LineWrap = 7,
-    /// ?12
     BlinkingCursor = 12,
-    /// 20
-    ///
-    /// NB This is actually a private mode. We should consider adding a second
-    /// enumeration for public/private modesets.
-    LineFeedNewLine = 20,
-    /// ?25
     ShowCursor = 25,
-    /// ?1000
     ReportMouseClicks = 1000,
-    /// ?1002
     ReportCellMouseMotion = 1002,
-    /// ?1003
     ReportAllMouseMotion = 1003,
-    /// ?1004
     ReportFocusInOut = 1004,
-    /// ?1005
     Utf8Mouse = 1005,
-    /// ?1006
     SgrMouse = 1006,
-    /// ?1007
     AlternateScroll = 1007,
-    /// ?1042
     UrgencyHints = 1042,
-    /// ?1049
     SwapScreenAndSetRestoreCursor = 1049,
-    /// ?2004
     BracketedPaste = 2004,
-}
-
-impl Mode {
-    /// Create mode from a primitive.
-    pub fn from_primitive(intermediate: Option<&u8>, num: u16) -> Option<Mode> {
-        let private = match intermediate {
-            Some(b'?') => true,
-            None => false,
-            _ => return None,
-        };
-
-        if private {
-            Some(match num {
-                1 => Mode::CursorKeys,
-                3 => Mode::ColumnMode,
-                6 => Mode::Origin,
-                7 => Mode::LineWrap,
-                12 => Mode::BlinkingCursor,
-                25 => Mode::ShowCursor,
-                1000 => Mode::ReportMouseClicks,
-                1002 => Mode::ReportCellMouseMotion,
-                1003 => Mode::ReportAllMouseMotion,
-                1004 => Mode::ReportFocusInOut,
-                1005 => Mode::Utf8Mouse,
-                1006 => Mode::SgrMouse,
-                1007 => Mode::AlternateScroll,
-                1042 => Mode::UrgencyHints,
-                1049 => Mode::SwapScreenAndSetRestoreCursor,
-                2004 => Mode::BracketedPaste,
-                _ => {
-                    trace!("[unimplemented] primitive mode: {}", num);
-                    return None;
-                },
-            })
-        } else {
-            Some(match num {
-                4 => Mode::Insert,
-                20 => Mode::LineFeedNewLine,
-                _ => return None,
-            })
-        }
-    }
+    /// The mode is handled automatically by [`Processor`].
+    SyncUpdate = 2026,
 }
 
 /// Mode for clearing line.
@@ -1023,32 +1184,22 @@ pub enum Attr {
 }
 
 /// Identifiers which can be assigned to a graphic character set.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum CharsetIndex {
     /// Default set, is designated as ASCII at startup.
+    #[default]
     G0,
     G1,
     G2,
     G3,
 }
 
-impl Default for CharsetIndex {
-    fn default() -> Self {
-        CharsetIndex::G0
-    }
-}
-
 /// Standard or common character sets which can be designated as G0-G3.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum StandardCharset {
+    #[default]
     Ascii,
     SpecialCharacterAndLineDrawing,
-}
-
-impl Default for StandardCharset {
-    fn default() -> Self {
-        StandardCharset::Ascii
-    }
 }
 
 impl StandardCharset {
@@ -1097,6 +1248,36 @@ impl StandardCharset {
     }
 }
 
+/// SCP control's first parameter which determines character path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScpCharPath {
+    /// SCP's first parameter value of 0. Behavior is implementation defined.
+    Default,
+    /// SCP's first parameter value of 1 which sets character path to
+    /// LEFT-TO-RIGHT.
+    LTR,
+    /// SCP's first parameter value of 2 which sets character path to
+    /// RIGHT-TO-LEFT.
+    RTL,
+}
+
+/// SCP control's second parameter which determines update mode/direction
+/// between components.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScpUpdateMode {
+    /// SCP's second parameter value of 0 (the default). Implementation
+    /// dependant update.
+    ImplementationDependant,
+    /// SCP's second parameter value of 1.
+    ///
+    /// Reflect data component changes in the presentation component.
+    DataToPresentation,
+    /// SCP's second parameter value of 2.
+    ///
+    /// Reflect presentation component changes in the data component.
+    PresentationToData,
+}
+
 impl<'a, H, T> crate::Perform for Performer<'a, H, T>
 where
     H: Handler + 'a,
@@ -1125,18 +1306,10 @@ where
 
     #[inline]
     fn hook(&mut self, params: &Params, intermediates: &[u8], ignore: bool, action: char) {
-        match (action, intermediates) {
-            ('s', [b'=']) => {
-                // Start a synchronized update. The end is handled with a separate parser.
-                if params.iter().next().map_or(false, |param| param[0] == 1) {
-                    self.state.dcs = Some(Dcs::SyncStart);
-                }
-            },
-            _ => debug!(
-                "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
-                params, intermediates, ignore, action
-            ),
-        }
+        debug!(
+            "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
+            params, intermediates, ignore, action
+        );
     }
 
     #[inline]
@@ -1146,13 +1319,7 @@ where
 
     #[inline]
     fn unhook(&mut self) {
-        match self.state.dcs {
-            Some(Dcs::SyncStart) => {
-                self.state.sync_state.timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
-            },
-            Some(Dcs::SyncEnd) => (),
-            _ => debug!("[unhandled unhook]"),
-        }
+        debug!("[unhandled unhook]");
     }
 
     #[inline]
@@ -1238,8 +1405,8 @@ where
                     return;
                 }
 
-                // Link parameters are in format of `key1=value1:key2=value2`. Currently only key
-                // `id` is defined.
+                // Link parameters are in format of `key1=value1:key2=value2`. Currently only
+                // key `id` is defined.
                 let id = link_params
                     .split(|&b| b == b':')
                     .find_map(|kv| kv.strip_prefix(b"id="))
@@ -1280,6 +1447,15 @@ where
                     }
                 }
                 unhandled(params);
+            },
+
+            // Set mouse cursor shape.
+            b"22" if params.len() == 2 => {
+                let shape = String::from_utf8_lossy(params[1]);
+                match CursorIcon::from_str(&shape) {
+                    Ok(cursor_icon) => self.handler.set_mouse_cursor_icon(cursor_icon),
+                    Err(_) => debug!("[osc 22] unrecognized cursor icon shape: {shape:?}"),
+                }
             },
 
             // Set cursor style.
@@ -1363,7 +1539,7 @@ where
             }};
         }
 
-        if has_ignored_intermediates || intermediates.len() > 1 {
+        if has_ignored_intermediates || intermediates.len() > 2 {
             unhandled!();
             return;
         }
@@ -1415,12 +1591,20 @@ where
                 let x = next_param_or(1) as usize;
                 handler.goto(y - 1, x - 1);
             },
-            ('h', intermediates) => {
+            ('h', []) => {
                 for param in params_iter.map(|param| param[0]) {
-                    match Mode::from_primitive(intermediates.first(), param) {
-                        Some(mode) => handler.set_mode(mode),
-                        None => unhandled!(),
+                    handler.set_mode(Mode::new(param))
+                }
+            },
+            ('h', [b'?']) => {
+                for param in params_iter.map(|param| param[0]) {
+                    // Handle sync updates opaquely.
+                    if param == NamedPrivateMode::SyncUpdate as u16 {
+                        self.state.sync_state.timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
+                        self.terminated = true;
                     }
+
+                    handler.set_private_mode(PrivateMode::new(param))
                 }
             },
             ('I', []) => handler.move_forward_tabs(next_param_or(1)),
@@ -1451,13 +1635,39 @@ where
 
                 handler.clear_line(mode);
             },
+            ('k', [b' ']) => {
+                // SCP control.
+                let char_path = match next_param_or(0) {
+                    0 => ScpCharPath::Default,
+                    1 => ScpCharPath::LTR,
+                    2 => ScpCharPath::RTL,
+                    _ => {
+                        unhandled!();
+                        return;
+                    },
+                };
+
+                let update_mode = match next_param_or(0) {
+                    0 => ScpUpdateMode::ImplementationDependant,
+                    1 => ScpUpdateMode::DataToPresentation,
+                    2 => ScpUpdateMode::PresentationToData,
+                    _ => {
+                        unhandled!();
+                        return;
+                    },
+                };
+
+                handler.set_scp(char_path, update_mode);
+            },
             ('L', []) => handler.insert_blank_lines(next_param_or(1) as usize),
-            ('l', intermediates) => {
+            ('l', []) => {
                 for param in params_iter.map(|param| param[0]) {
-                    match Mode::from_primitive(intermediates.first(), param) {
-                        Some(mode) => handler.unset_mode(mode),
-                        None => unhandled!(),
-                    }
+                    handler.unset_mode(Mode::new(param))
+                }
+            },
+            ('l', [b'?']) => {
+                for param in params_iter.map(|param| param[0]) {
+                    handler.unset_private_mode(PrivateMode::new(param))
                 }
             },
             ('M', []) => handler.delete_lines(next_param_or(1) as usize),
@@ -1465,16 +1675,35 @@ where
                 if params.is_empty() {
                     handler.terminal_attribute(Attr::Reset);
                 } else {
-                    for attr in attrs_from_sgr_parameters(&mut params_iter) {
-                        match attr {
-                            Some(attr) => handler.terminal_attribute(attr),
-                            None => unhandled!(),
-                        }
-                    }
+                    attrs_from_sgr_parameters(*handler, &mut params_iter);
+                }
+            },
+            ('m', [b'>']) => {
+                let mode = match (next_param_or(1) == 4).then(|| next_param_or(0)) {
+                    Some(0) => ModifyOtherKeys::Reset,
+                    Some(1) => ModifyOtherKeys::EnableExceptWellDefined,
+                    Some(2) => ModifyOtherKeys::EnableAll,
+                    _ => return unhandled!(),
+                };
+                handler.set_modify_other_keys(mode);
+            },
+            ('m', [b'?']) => {
+                if params_iter.next() == Some(&[4]) {
+                    handler.report_modify_other_keys();
+                } else {
+                    unhandled!()
                 }
             },
             ('n', []) => handler.device_status(next_param_or(0) as usize),
             ('P', []) => handler.delete_chars(next_param_or(1) as usize),
+            ('p', [b'$']) => {
+                let mode = next_param_or(0);
+                handler.report_mode(Mode::new(mode));
+            },
+            ('p', [b'?', b'$']) => {
+                let mode = next_param_or(0);
+                handler.report_private_mode(PrivateMode::new(mode));
+            },
             ('q', [b' ']) => {
                 // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
                 let cursor_style_id = next_param_or(0);
@@ -1509,6 +1738,25 @@ where
                 22 => handler.push_title(),
                 23 => handler.pop_title(),
                 _ => unhandled!(),
+            },
+            ('u', [b'?']) => handler.report_keyboard_mode(),
+            ('u', [b'=']) => {
+                let mode = KeyboardModes::from_bits_truncate(next_param_or(0) as u8);
+                let behavior = match next_param_or(1) {
+                    3 => KeyboardModesApplyBehavior::Difference,
+                    2 => KeyboardModesApplyBehavior::Union,
+                    // Default is replace.
+                    _ => KeyboardModesApplyBehavior::Replace,
+                };
+                handler.set_keyboard_mode(mode, behavior);
+            },
+            ('u', [b'>']) => {
+                let mode = KeyboardModes::from_bits_truncate(next_param_or(0) as u8);
+                handler.push_keyboard_mode(mode);
+            },
+            ('u', [b'<']) => {
+                // The default is 1.
+                handler.pop_keyboard_modes(next_param_or(1));
             },
             ('u', []) => handler.restore_cursor_position(),
             ('X', []) => handler.erase_chars(next_param_or(1) as usize),
@@ -1568,12 +1816,15 @@ where
             _ => unhandled!(),
         }
     }
+
+    #[inline]
+    fn terminated(&self) -> bool {
+        self.terminated
+    }
 }
 
 #[inline]
-fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
-    let mut attrs = Vec::with_capacity(params.size_hint().0);
-
+fn attrs_from_sgr_parameters<H: Handler>(handler: &mut H, params: &mut ParamsIter<'_>) {
     while let Some(param) = params.next() {
         let attr = match param {
             [0] => Some(Attr::Reset),
@@ -1653,10 +1904,12 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
             [107] => Some(Attr::Background(Color::Named(NamedColor::BrightWhite))),
             _ => None,
         };
-        attrs.push(attr);
-    }
 
-    attrs
+        match attr {
+            Some(attr) => handler.terminal_attribute(attr),
+            None => continue,
+        }
+    }
 }
 
 /// Handle colon separated rgb color escape sequence.
@@ -1750,7 +2003,7 @@ pub mod C0 {
     /// Unit Separator.
     pub const US: u8 = 0x1F;
     /// Delete, should be ignored by terminal.
-    pub const DEL: u8 = 0x7f;
+    pub const DEL: u8 = 0x7F;
 }
 
 // Tests for parsing escape sequences.
@@ -1761,22 +2014,24 @@ mod tests {
     use super::*;
 
     #[derive(Default)]
-    pub struct TestSyncHandler;
+    pub struct TestSyncHandler {
+        is_sync: usize,
+    }
 
     impl Timeout for TestSyncHandler {
         #[inline]
         fn set_timeout(&mut self, _: Duration) {
-            unreachable!()
+            self.is_sync += 1;
         }
 
         #[inline]
         fn clear_timeout(&mut self) {
-            unreachable!()
+            self.is_sync = 0;
         }
 
         #[inline]
         fn pending_timeout(&self) -> bool {
-            false
+            self.is_sync != 0
         }
     }
 
@@ -1835,72 +2090,60 @@ mod tests {
 
     #[test]
     fn parse_control_attribute() {
-        static BYTES: &[u8] = &[0x1b, b'[', b'1', b'm'];
+        static BYTES: &[u8] = &[0x1B, b'[', b'1', b'm'];
 
         let mut parser = Processor::<TestSyncHandler>::new();
         let mut handler = MockHandler::default();
 
-        for byte in BYTES {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, BYTES);
 
         assert_eq!(handler.attr, Some(Attr::Bold));
     }
 
     #[test]
     fn parse_terminal_identity_csi() {
-        let bytes: &[u8] = &[0x1b, b'[', b'1', b'c'];
+        let bytes: &[u8] = &[0x1B, b'[', b'1', b'c'];
 
         let mut parser = Processor::<TestSyncHandler>::new();
         let mut handler = MockHandler::default();
 
-        for byte in bytes {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, bytes);
 
         assert!(!handler.identity_reported);
         handler.reset_state();
 
-        let bytes: &[u8] = &[0x1b, b'[', b'c'];
+        let bytes: &[u8] = &[0x1B, b'[', b'c'];
 
-        for byte in bytes {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, bytes);
 
         assert!(handler.identity_reported);
         handler.reset_state();
 
-        let bytes: &[u8] = &[0x1b, b'[', b'0', b'c'];
+        let bytes: &[u8] = &[0x1B, b'[', b'0', b'c'];
 
-        for byte in bytes {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, bytes);
 
         assert!(handler.identity_reported);
     }
 
     #[test]
     fn parse_terminal_identity_esc() {
-        let bytes: &[u8] = &[0x1b, b'Z'];
+        let bytes: &[u8] = &[0x1B, b'Z'];
 
         let mut parser = Processor::<TestSyncHandler>::new();
         let mut handler = MockHandler::default();
 
-        for byte in bytes {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, bytes);
 
         assert!(handler.identity_reported);
         handler.reset_state();
 
-        let bytes: &[u8] = &[0x1b, b'#', b'Z'];
+        let bytes: &[u8] = &[0x1B, b'#', b'Z'];
 
         let mut parser = Processor::<TestSyncHandler>::new();
         let mut handler = MockHandler::default();
 
-        for byte in bytes {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, bytes);
 
         assert!(!handler.identity_reported);
         handler.reset_state();
@@ -1909,16 +2152,14 @@ mod tests {
     #[test]
     fn parse_truecolor_attr() {
         static BYTES: &[u8] = &[
-            0x1b, b'[', b'3', b'8', b';', b'2', b';', b'1', b'2', b'8', b';', b'6', b'6', b';',
+            0x1B, b'[', b'3', b'8', b';', b'2', b';', b'1', b'2', b'8', b';', b'6', b'6', b';',
             b'2', b'5', b'5', b'm',
         ];
 
         let mut parser = Processor::<TestSyncHandler>::new();
         let mut handler = MockHandler::default();
 
-        for byte in BYTES {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, BYTES);
 
         let spec = Rgb { r: 128, g: 66, b: 255 };
 
@@ -1929,38 +2170,34 @@ mod tests {
     #[test]
     fn parse_zsh_startup() {
         static BYTES: &[u8] = &[
-            0x1b, b'[', b'1', b'm', 0x1b, b'[', b'7', b'm', b'%', 0x1b, b'[', b'2', b'7', b'm',
-            0x1b, b'[', b'1', b'm', 0x1b, b'[', b'0', b'm', b' ', b' ', b' ', b' ', b' ', b' ',
+            0x1B, b'[', b'1', b'm', 0x1B, b'[', b'7', b'm', b'%', 0x1B, b'[', b'2', b'7', b'm',
+            0x1B, b'[', b'1', b'm', 0x1B, b'[', b'0', b'm', b' ', b' ', b' ', b' ', b' ', b' ',
             b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ',
             b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ',
             b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ',
             b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ',
             b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ',
-            b' ', b' ', b' ', b'\r', b' ', b'\r', b'\r', 0x1b, b'[', b'0', b'm', 0x1b, b'[', b'2',
-            b'7', b'm', 0x1b, b'[', b'2', b'4', b'm', 0x1b, b'[', b'J', b'j', b'w', b'i', b'l',
-            b'm', b'@', b'j', b'w', b'i', b'l', b'm', b'-', b'd', b'e', b's', b'k', b' ', 0x1b,
-            b'[', b'0', b'1', b';', b'3', b'2', b'm', 0xe2, 0x9e, 0x9c, b' ', 0x1b, b'[', b'0',
-            b'1', b';', b'3', b'2', b'm', b' ', 0x1b, b'[', b'3', b'6', b'm', b'~', b'/', b'c',
+            b' ', b' ', b' ', b'\r', b' ', b'\r', b'\r', 0x1B, b'[', b'0', b'm', 0x1B, b'[', b'2',
+            b'7', b'm', 0x1B, b'[', b'2', b'4', b'm', 0x1B, b'[', b'J', b'j', b'w', b'i', b'l',
+            b'm', b'@', b'j', b'w', b'i', b'l', b'm', b'-', b'd', b'e', b's', b'k', b' ', 0x1B,
+            b'[', b'0', b'1', b';', b'3', b'2', b'm', 0xE2, 0x9E, 0x9C, b' ', 0x1B, b'[', b'0',
+            b'1', b';', b'3', b'2', b'm', b' ', 0x1B, b'[', b'3', b'6', b'm', b'~', b'/', b'c',
             b'o', b'd', b'e',
         ];
 
         let mut handler = MockHandler::default();
         let mut parser = Processor::<TestSyncHandler>::new();
 
-        for byte in BYTES {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, BYTES);
     }
 
     #[test]
     fn parse_designate_g0_as_line_drawing() {
-        static BYTES: &[u8] = &[0x1b, b'(', b'0'];
+        static BYTES: &[u8] = &[0x1B, b'(', b'0'];
         let mut parser = Processor::<TestSyncHandler>::new();
         let mut handler = MockHandler::default();
 
-        for byte in BYTES {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, BYTES);
 
         assert_eq!(handler.index, CharsetIndex::G0);
         assert_eq!(handler.charset, StandardCharset::SpecialCharacterAndLineDrawing);
@@ -1968,37 +2205,35 @@ mod tests {
 
     #[test]
     fn parse_designate_g1_as_line_drawing_and_invoke() {
-        static BYTES: &[u8] = &[0x1b, b')', b'0', 0x0e];
+        static BYTES: &[u8] = &[0x1B, b')', b'0', 0x0E];
         let mut parser = Processor::<TestSyncHandler>::new();
         let mut handler = MockHandler::default();
 
-        for byte in &BYTES[..3] {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, &BYTES[..3]);
 
         assert_eq!(handler.index, CharsetIndex::G1);
         assert_eq!(handler.charset, StandardCharset::SpecialCharacterAndLineDrawing);
 
         let mut handler = MockHandler::default();
-        parser.advance(&mut handler, BYTES[3]);
+        parser.advance(&mut handler, &[BYTES[3]]);
 
         assert_eq!(handler.index, CharsetIndex::G1);
     }
 
     #[test]
     fn parse_valid_rgb_colors() {
-        assert_eq!(xparse_color(b"rgb:f/e/d"), Some(Rgb { r: 0xff, g: 0xee, b: 0xdd }));
-        assert_eq!(xparse_color(b"rgb:11/aa/ff"), Some(Rgb { r: 0x11, g: 0xaa, b: 0xff }));
-        assert_eq!(xparse_color(b"rgb:f/ed1/cb23"), Some(Rgb { r: 0xff, g: 0xec, b: 0xca }));
-        assert_eq!(xparse_color(b"rgb:ffff/0/0"), Some(Rgb { r: 0xff, g: 0x0, b: 0x0 }));
+        assert_eq!(xparse_color(b"rgb:f/e/d"), Some(Rgb { r: 0xFF, g: 0xEE, b: 0xDD }));
+        assert_eq!(xparse_color(b"rgb:11/aa/ff"), Some(Rgb { r: 0x11, g: 0xAA, b: 0xFF }));
+        assert_eq!(xparse_color(b"rgb:f/ed1/cb23"), Some(Rgb { r: 0xFF, g: 0xEC, b: 0xCA }));
+        assert_eq!(xparse_color(b"rgb:ffff/0/0"), Some(Rgb { r: 0xFF, g: 0x0, b: 0x0 }));
     }
 
     #[test]
     fn parse_valid_legacy_rgb_colors() {
-        assert_eq!(xparse_color(b"#1af"), Some(Rgb { r: 0x10, g: 0xa0, b: 0xf0 }));
-        assert_eq!(xparse_color(b"#11aaff"), Some(Rgb { r: 0x11, g: 0xaa, b: 0xff }));
-        assert_eq!(xparse_color(b"#110aa0ff0"), Some(Rgb { r: 0x11, g: 0xaa, b: 0xff }));
-        assert_eq!(xparse_color(b"#1100aa00ff00"), Some(Rgb { r: 0x11, g: 0xaa, b: 0xff }));
+        assert_eq!(xparse_color(b"#1af"), Some(Rgb { r: 0x10, g: 0xA0, b: 0xF0 }));
+        assert_eq!(xparse_color(b"#11aaff"), Some(Rgb { r: 0x11, g: 0xAA, b: 0xFF }));
+        assert_eq!(xparse_color(b"#110aa0ff0"), Some(Rgb { r: 0x11, g: 0xAA, b: 0xFF }));
+        assert_eq!(xparse_color(b"#1100aa00ff00"), Some(Rgb { r: 0x11, g: 0xAA, b: 0xFF }));
     }
 
     #[test]
@@ -2035,11 +2270,9 @@ mod tests {
         let mut parser = Processor::<TestSyncHandler>::new();
         let mut handler = MockHandler::default();
 
-        for byte in bytes {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, bytes);
 
-        assert_eq!(handler.color, Some(Rgb { r: 0xf0, g: 0xf0, b: 0xf0 }));
+        assert_eq!(handler.color, Some(Rgb { r: 0xF0, g: 0xF0, b: 0xF0 }));
     }
 
     #[test]
@@ -2049,9 +2282,7 @@ mod tests {
         let mut parser = Processor::<TestSyncHandler>::new();
         let mut handler = MockHandler::default();
 
-        for byte in bytes {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, bytes);
 
         assert_eq!(handler.reset_colors, vec![1]);
     }
@@ -2063,9 +2294,7 @@ mod tests {
         let mut parser = Processor::<TestSyncHandler>::new();
         let mut handler = MockHandler::default();
 
-        for byte in bytes {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, bytes);
 
         let expected: Vec<usize> = (0..256).collect();
         assert_eq!(handler.reset_colors, expected);
@@ -2078,30 +2307,148 @@ mod tests {
         let mut parser = Processor::<TestSyncHandler>::new();
         let mut handler = MockHandler::default();
 
-        for byte in bytes {
-            parser.advance(&mut handler, *byte);
-        }
+        parser.advance(&mut handler, bytes);
 
         let expected: Vec<usize> = (0..256).collect();
         assert_eq!(handler.reset_colors, expected);
     }
 
     #[test]
+    fn partial_sync_updates() {
+        let mut parser = Processor::<TestSyncHandler>::new();
+        let mut handler = MockHandler::default();
+
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
+        assert!(handler.attr.is_none());
+
+        // Start synchronized update.
+
+        parser.advance(&mut handler, b"\x1b[?20");
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
+        assert!(handler.attr.is_none());
+
+        parser.advance(&mut handler, b"26h");
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
+        assert!(handler.attr.is_none());
+
+        // Dispatch some data.
+
+        parser.advance(&mut handler, b"random \x1b[31m stuff");
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
+        assert!(handler.attr.is_none());
+
+        // Extend synchronized update.
+
+        parser.advance(&mut handler, b"\x1b[?20");
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
+        assert!(handler.attr.is_none());
+
+        parser.advance(&mut handler, b"26h");
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 2);
+        assert!(handler.attr.is_none());
+
+        // Terminate synchronized update.
+
+        parser.advance(&mut handler, b"\x1b[?20");
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 2);
+        assert!(handler.attr.is_none());
+
+        parser.advance(&mut handler, b"26l");
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
+        assert!(handler.attr.is_some());
+    }
+
+    #[test]
+    fn sync_bursts_buffer() {
+        let mut parser = Processor::<TestSyncHandler>::new();
+        let mut handler = MockHandler::default();
+
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
+        assert!(handler.attr.is_none());
+
+        // Repeat test twice to ensure internal state is reset properly.
+        for _ in 0..2 {
+            // Start synchronized update.
+            parser.advance(&mut handler, b"\x1b[?2026h");
+            assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
+            assert!(handler.attr.is_none());
+
+            // Ensure sync works.
+            parser.advance(&mut handler, b"\x1b[31m");
+            assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
+            assert!(handler.attr.is_none());
+
+            // Exceed sync buffer dimensions.
+            parser.advance(&mut handler, "a".repeat(SYNC_BUFFER_SIZE).as_bytes());
+            assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
+            assert!(handler.attr.take().is_some());
+
+            // Ensure new events are dispatched directly.
+            parser.advance(&mut handler, b"\x1b[31m");
+            assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
+            assert!(handler.attr.take().is_some());
+        }
+    }
+
+    #[test]
+    fn mixed_sync_escape() {
+        let mut parser = Processor::<TestSyncHandler>::new();
+        let mut handler = MockHandler::default();
+
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
+        assert!(handler.attr.is_none());
+
+        // Start synchronized update with immediate SGR.
+        parser.advance(&mut handler, b"\x1b[?2026h\x1b[31m");
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
+        assert!(handler.attr.is_none());
+
+        // Terminate synchronized update and check for SGR.
+        parser.advance(&mut handler, b"\x1b[?2026l");
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
+        assert!(handler.attr.is_some());
+    }
+
+    #[test]
+    fn sync_bsu_with_esu() {
+        let mut parser = Processor::<TestSyncHandler>::new();
+        let mut handler = MockHandler::default();
+
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
+        assert!(handler.attr.is_none());
+
+        // Start synchronized update with immediate SGR.
+        parser.advance(&mut handler, b"\x1b[?2026h\x1b[1m");
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 1);
+        assert!(handler.attr.is_none());
+
+        // Terminate synchronized update, but immediately start a new one.
+        parser.advance(&mut handler, b"\x1b[?2026l\x1b[?2026h\x1b[4m");
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 2);
+        assert_eq!(handler.attr.take(), Some(Attr::Bold));
+
+        // Terminate again, expecting one buffered SGR.
+        parser.advance(&mut handler, b"\x1b[?2026l");
+        assert_eq!(parser.state.sync_state.timeout.is_sync, 0);
+        assert_eq!(handler.attr.take(), Some(Attr::Underline));
+    }
+
+    #[test]
     #[cfg(not(feature = "no_std"))]
     fn contrast() {
-        let rgb1 = Rgb { r: 0xff, g: 0xff, b: 0xff };
+        let rgb1 = Rgb { r: 0xFF, g: 0xFF, b: 0xFF };
         let rgb2 = Rgb { r: 0x00, g: 0x00, b: 0x00 };
         assert!((rgb1.contrast(rgb2) - 21.).abs() < f64::EPSILON);
 
-        let rgb1 = Rgb { r: 0xff, g: 0xff, b: 0xff };
+        let rgb1 = Rgb { r: 0xFF, g: 0xFF, b: 0xFF };
         assert!((rgb1.contrast(rgb1) - 1.).abs() < f64::EPSILON);
 
-        let rgb1 = Rgb { r: 0xff, g: 0x00, b: 0xff };
-        let rgb2 = Rgb { r: 0x00, g: 0xff, b: 0x00 };
+        let rgb1 = Rgb { r: 0xFF, g: 0x00, b: 0xFF };
+        let rgb2 = Rgb { r: 0x00, g: 0xFF, b: 0x00 };
         assert!((rgb1.contrast(rgb2) - 2.285_543_608_124_253_3).abs() < f64::EPSILON);
 
         let rgb1 = Rgb { r: 0x12, g: 0x34, b: 0x56 };
-        let rgb2 = Rgb { r: 0xfe, g: 0xdc, b: 0xba };
+        let rgb2 = Rgb { r: 0xFE, g: 0xDC, b: 0xBA };
         assert!((rgb1.contrast(rgb2) - 9.786_558_997_257_74).abs() < f64::EPSILON);
     }
 }

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use super::Data;
 use super::Inline;
 use super::Position;
@@ -73,13 +75,8 @@ impl SourceFileRuntime {
     }
     fn update(&mut self, actual: &str, inline: &Inline) -> std::io::Result<()> {
         let span = Span::from_pos(&inline.position, &self.original_text);
-        let desired_indent = if inline.indent {
-            Some(span.line_indent)
-        } else {
-            None
-        };
-        let patch = format_patch(desired_indent, actual);
-        self.patchwork.patch(span.literal_range, &patch);
+        let patch = format_patch(actual);
+        self.patchwork.patch(span.literal_range, &patch)?;
         std::fs::write(&inline.position.file, &self.patchwork.text)
     }
 }
@@ -87,25 +84,39 @@ impl SourceFileRuntime {
 #[derive(Debug)]
 struct Patchwork {
     text: String,
-    indels: Vec<(std::ops::Range<usize>, usize)>,
+    indels: BTreeMap<OrdRange, (usize, String)>,
 }
 
 impl Patchwork {
     fn new(text: String) -> Patchwork {
         Patchwork {
             text,
-            indels: Vec::new(),
+            indels: BTreeMap::new(),
         }
     }
-    fn patch(&mut self, mut range: std::ops::Range<usize>, patch: &str) {
-        self.indels.push((range.clone(), patch.len()));
-        self.indels.sort_by_key(|(delete, _insert)| delete.start);
+    fn patch(&mut self, mut range: std::ops::Range<usize>, patch: &str) -> std::io::Result<()> {
+        let key: OrdRange = range.clone().into();
+        match self.indels.entry(key) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert((patch.len(), patch.to_owned()));
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                if entry.get().1 == patch {
+                    return Ok(());
+                } else {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "cannot update as it was already modified",
+                    ));
+                }
+            }
+        }
 
         let (delete, insert) = self
             .indels
             .iter()
             .take_while(|(delete, _)| delete.start < range.start)
-            .map(|(delete, insert)| (delete.end - delete.start, insert))
+            .map(|(delete, (insert, _))| (delete.end - delete.start, insert))
             .fold((0usize, 0usize), |(x1, y1), (x2, y2)| (x1 + x2, y1 + y2));
 
         for pos in &mut [&mut range.start, &mut range.end] {
@@ -114,6 +125,22 @@ impl Patchwork {
         }
 
         self.text.replace_range(range, patch);
+        Ok(())
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct OrdRange {
+    start: usize,
+    end: usize,
+}
+
+impl From<std::ops::Range<usize>> for OrdRange {
+    fn from(other: std::ops::Range<usize>) -> Self {
+        Self {
+            start: other.start,
+            end: other.end,
+        }
     }
 }
 
@@ -135,9 +162,8 @@ fn lit_kind_for_patch(patch: &str) -> StrLitKind {
     StrLitKind::Raw(max_hashes + 1)
 }
 
-fn format_patch(desired_indent: Option<usize>, patch: &str) -> String {
+fn format_patch(patch: &str) -> String {
     let lit_kind = lit_kind_for_patch(patch);
-    let indent = desired_indent.map(|it| " ".repeat(it));
     let is_multiline = patch.contains('\n');
 
     let mut buf = String::new();
@@ -148,21 +174,9 @@ fn format_patch(desired_indent: Option<usize>, patch: &str) -> String {
     if is_multiline {
         buf.push('\n');
     }
-    let mut final_newline = false;
-    for line in crate::utils::LinesWithTerminator::new(patch) {
-        if is_multiline && !line.trim().is_empty() {
-            if let Some(indent) = &indent {
-                buf.push_str(indent);
-                buf.push_str("    ");
-            }
-        }
-        buf.push_str(line);
-        final_newline = line.ends_with('\n');
-    }
-    if final_newline {
-        if let Some(indent) = &indent {
-            buf.push_str(indent);
-        }
+    buf.push_str(patch);
+    if is_multiline {
+        buf.push('\n');
     }
     lit_kind.write_end(&mut buf).unwrap();
     if matches!(lit_kind, StrLitKind::Raw(_)) {
@@ -173,8 +187,6 @@ fn format_patch(desired_indent: Option<usize>, patch: &str) -> String {
 
 #[derive(Clone, Debug)]
 struct Span {
-    line_indent: usize,
-
     /// The byte range of the argument to `expect!`, including the inner `[]` if it exists.
     literal_range: std::ops::Range<usize>,
 }
@@ -207,13 +219,12 @@ impl Span {
                     .0;
 
                 let literal_start = line_start + byte_offset;
-                let indent = line.chars().take_while(|&it| it == ' ').count();
-                target_line = Some((literal_start, indent));
+                target_line = Some(literal_start);
                 break;
             }
             line_start += line.len();
         }
-        let (literal_start, line_indent) = target_line.unwrap();
+        let literal_start = target_line.unwrap();
 
         let lit_to_eof = &file[literal_start..];
         let lit_to_eof_trimmed = lit_to_eof.trim_start();
@@ -223,10 +234,7 @@ impl Span {
         let literal_len =
             locate_end(lit_to_eof_trimmed).expect("Couldn't find closing delimiter for `expect!`.");
         let literal_range = literal_start..literal_start + literal_len;
-        Span {
-            line_indent,
-            literal_range,
-        }
+        Span { literal_range }
     }
 }
 
@@ -372,70 +380,119 @@ impl PathRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assert_eq;
+    use crate::assert_data_eq;
+    use crate::prelude::*;
     use crate::str;
-    use crate::ToDebug as _;
 
     #[test]
     fn test_format_patch() {
-        let patch = format_patch(None, "hello\nworld\n");
+        let patch = format_patch("hello\nworld\n");
 
-        assert_eq(
-            str![[r##"
-            [r#"
-            hello
-            world
-            "#]"##]],
+        assert_data_eq!(
             patch,
+            str![[r##"
+[r#"
+hello
+world
+
+"#]
+"##]],
         );
 
-        let patch = format_patch(None, r"hello\tworld");
-        assert_eq(str![[r##"[r#"hello\tworld"#]"##]], patch);
+        let patch = format_patch(r"hello\tworld");
+        assert_data_eq!(patch, str![[r##"[r#"hello\tworld"#]"##]].raw());
 
-        let patch = format_patch(None, "{\"foo\": 42}");
-        assert_eq(str![[r##"[r#"{"foo": 42}"#]"##]], patch);
-
-        let patch = format_patch(Some(0), "hello\nworld\n");
-        assert_eq(
-            str![[r##"
-            [r#"
-                hello
-                world
-            "#]"##]],
-            patch,
-        );
-
-        let patch = format_patch(Some(4), "single line");
-        assert_eq(str![[r#""single line""#]], patch);
+        let patch = format_patch("{\"foo\": 42}");
+        assert_data_eq!(patch, str![[r##"[r#"{"foo": 42}"#]"##]]);
     }
 
     #[test]
     fn test_patchwork() {
-        let mut patchwork = Patchwork::new("one two three".to_string());
-        patchwork.patch(4..7, "zwei");
-        patchwork.patch(0..3, "один");
-        patchwork.patch(8..13, "3");
-        assert_eq(
-            str![[r#"
-            Patchwork {
-                text: "один zwei 3",
-                indels: [
-                    (
-                        0..3,
-                        8,
-                    ),
-                    (
-                        4..7,
-                        4,
-                    ),
-                    (
-                        8..13,
-                        1,
-                    ),
-                ],
-            }
-        "#]],
+        let mut patchwork = Patchwork::new("one two three".to_owned());
+        patchwork.patch(4..7, "zwei").unwrap();
+        patchwork.patch(0..3, "один").unwrap();
+        patchwork.patch(8..13, "3").unwrap();
+        assert_data_eq!(
             patchwork.to_debug(),
+            str![[r#"
+Patchwork {
+    text: "один zwei 3",
+    indels: {
+        OrdRange {
+            start: 0,
+            end: 3,
+        }: (
+            8,
+            "один",
+        ),
+        OrdRange {
+            start: 4,
+            end: 7,
+        }: (
+            4,
+            "zwei",
+        ),
+        OrdRange {
+            start: 8,
+            end: 13,
+        }: (
+            1,
+            "3",
+        ),
+    },
+}
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn test_patchwork_overlap_diverge() {
+        let mut patchwork = Patchwork::new("one two three".to_owned());
+        patchwork.patch(4..7, "zwei").unwrap();
+        patchwork.patch(4..7, "abcd").unwrap_err();
+        assert_data_eq!(
+            patchwork.to_debug(),
+            str![[r#"
+Patchwork {
+    text: "one zwei three",
+    indels: {
+        OrdRange {
+            start: 4,
+            end: 7,
+        }: (
+            4,
+            "zwei",
+        ),
+    },
+}
+
+"#]],
+        );
+    }
+
+    #[test]
+    fn test_patchwork_overlap_converge() {
+        let mut patchwork = Patchwork::new("one two three".to_owned());
+        patchwork.patch(4..7, "zwei").unwrap();
+        patchwork.patch(4..7, "zwei").unwrap();
+        assert_data_eq!(
+            patchwork.to_debug(),
+            str![[r#"
+Patchwork {
+    text: "one zwei three",
+    indels: {
+        OrdRange {
+            start: 4,
+            end: 7,
+        }: (
+            4,
+            "zwei",
+        ),
+    },
+}
+
+"#]],
         );
     }
 

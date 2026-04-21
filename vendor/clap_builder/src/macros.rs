@@ -79,11 +79,15 @@ macro_rules! crate_description {
 
 /// Allows you to pull the name from your Cargo.toml at compile time.
 ///
+/// <div class="warning">
+///
 /// **NOTE:** This macro extracts the name from an environment variable `CARGO_PKG_NAME`.
 /// When the crate name is set to something different from the package name,
 /// use environment variables `CARGO_CRATE_NAME` or `CARGO_BIN_NAME`.
 /// See [the Cargo Book](https://doc.rust-lang.org/cargo/reference/environment-variables.html)
 /// for more information.
+///
+/// </div>
 ///
 /// # Examples
 ///
@@ -104,12 +108,16 @@ macro_rules! crate_name {
 
 /// Allows you to build the `Command` instance from your Cargo.toml at compile time.
 ///
+/// <div class="warning">
+///
 /// **NOTE:** Changing the values in your `Cargo.toml` does not trigger a re-build automatically,
 /// and therefore won't change the generated output until you recompile.
 ///
 /// In some cases you can "trick" the compiler into triggering a rebuild when your
 /// `Cargo.toml` is changed by including this in your `src/main.rs` file
 /// `include_str!("../Cargo.toml");`
+///
+/// </div>
 ///
 /// # Examples
 ///
@@ -121,9 +129,7 @@ macro_rules! crate_name {
 #[cfg(feature = "cargo")]
 #[macro_export]
 macro_rules! command {
-    () => {{
-        $crate::command!($crate::crate_name!())
-    }};
+    () => {{ $crate::command!($crate::crate_name!()) }};
     ($name:expr) => {{
         let mut cmd = $crate::Command::new($name).version($crate::crate_version!());
 
@@ -430,8 +436,12 @@ macro_rules! arg_impl {
 ///
 /// Allows creation of basic settings for the [`Arg`].
 ///
+/// <div class="warning">
+///
 /// **NOTE**: Not all settings may be set using the usage string method. Some properties are
 /// only available via the builder pattern.
+///
+/// </div>
 ///
 /// # Syntax
 ///
@@ -467,8 +477,12 @@ macro_rules! arg_impl {
 /// A long flag is a `--` followed by either a bare-word or a string, like `--foo` or
 /// `--"foo"`.
 ///
+/// <div class="warning">
+///
 /// **NOTE:** Dashes in the long name (e.g. `--foo-bar`) is not supported and quoting is required
 /// (e.g. `--"foo-bar"`).
+///
+/// </div>
 ///
 /// See [`Arg::long`][crate::Arg::long].
 ///
@@ -514,7 +528,22 @@ macro_rules! arg_impl {
 /// [`Arg`]: crate::Arg
 #[macro_export]
 macro_rules! arg {
+    ( -$($tail:tt)+ ) => {{
+        let arg = $crate::Arg::default();
+        let arg = $crate::arg_impl! {
+            @arg (arg) -$($tail)+
+        };
+        debug_assert_ne!(arg.get_id(), "", "Without a value or long flag, the `name:` prefix is required");
+        arg
+    }};
     ( $name:ident: $($tail:tt)+ ) => {{
+        let arg = $crate::Arg::new($crate::arg_impl! { @string $name });
+        let arg = $crate::arg_impl! {
+            @arg (arg) $($tail)+
+        };
+        arg
+    }};
+    ( $name:literal: $($tail:tt)+ ) => {{
         let arg = $crate::Arg::new($crate::arg_impl! { @string $name });
         let arg = $crate::arg_impl! {
             @arg (arg) $($tail)+
@@ -540,7 +569,7 @@ macro_rules! debug {
         let module_path = module_path!();
         let body = format!($($arg)*);
         let mut styled = $crate::builder::StyledStr::new();
-        let _ = write!(styled, "{}[{module_path:>28}]{body}{}\n", hint.render(), hint.render_reset());
+        let _ = write!(styled, "{hint}[{module_path:>28}]{body}{hint:#}\n");
         let color = $crate::output::fmt::Colorizer::new($crate::output::fmt::Stream::Stderr, $crate::ColorChoice::Auto).with_content(styled);
         let _ = color.print();
     })

@@ -15,8 +15,6 @@
 /// to ensure they get appropriately inlined. (inline(always) cannot be used
 /// with target_feature.)
 pub(crate) trait Vector: Copy + core::fmt::Debug {
-    /// The number of bits in the vector.
-    const BITS: usize;
     /// The number of bytes in the vector. That is, this is the size of the
     /// vector in memory.
     const BYTES: usize;
@@ -80,7 +78,7 @@ pub(crate) trait Vector: Copy + core::fmt::Debug {
 /// a slightly different representation. We could do extra work to unify the
 /// representations, but then would require additional costs in the hot path
 /// for `memchr` and `packedpair`. So instead, we abstraction over the specific
-/// representation with this trait an ddefine the operations we actually need.
+/// representation with this trait and define the operations we actually need.
 pub(crate) trait MoveMask: Copy + core::fmt::Debug {
     /// Return a mask that is all zeros except for the least significant `n`
     /// lanes in a corresponding vector.
@@ -200,7 +198,6 @@ mod x86sse2 {
     use super::{SensibleMoveMask, Vector};
 
     impl Vector for __m128i {
-        const BITS: usize = 128;
         const BYTES: usize = 16;
         const ALIGN: usize = Self::BYTES - 1;
 
@@ -250,7 +247,6 @@ mod x86avx2 {
     use super::{SensibleMoveMask, Vector};
 
     impl Vector for __m256i {
-        const BITS: usize = 256;
         const BYTES: usize = 32;
         const ALIGN: usize = Self::BYTES - 1;
 
@@ -300,7 +296,6 @@ mod aarch64neon {
     use super::{MoveMask, Vector};
 
     impl Vector for uint8x16_t {
-        const BITS: usize = 128;
         const BYTES: usize = 16;
         const ALIGN: usize = Self::BYTES - 1;
 
@@ -349,7 +344,7 @@ mod aarch64neon {
 
         /// This is the only interesting implementation of this routine.
         /// Basically, instead of doing the "shift right narrow" dance, we use
-        /// adajacent folding max to determine whether there are any non-zero
+        /// adjacent folding max to determine whether there are any non-zero
         /// bytes in our mask. If there are, *then* we'll do the "shift right
         /// narrow" dance. In benchmarks, this does lead to slightly better
         /// throughput, but the win doesn't appear huge.
@@ -381,18 +376,10 @@ mod aarch64neon {
     impl NeonMoveMask {
         /// Get the mask in a form suitable for computing offsets.
         ///
-        /// Basically, this normalizes to little endian. On big endian, this
-        /// swaps the bytes.
+        /// The mask is always already in host-endianness, so this is a no-op.
         #[inline(always)]
         fn get_for_offset(self) -> u64 {
-            #[cfg(target_endian = "big")]
-            {
-                self.0.swap_bytes()
-            }
-            #[cfg(target_endian = "little")]
-            {
-                self.0
-            }
+            self.0
         }
     }
 
@@ -464,14 +451,13 @@ mod aarch64neon {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
 mod wasm_simd128 {
     use core::arch::wasm32::*;
 
     use super::{SensibleMoveMask, Vector};
 
     impl Vector for v128 {
-        const BITS: usize = 128;
         const BYTES: usize = 16;
         const ALIGN: usize = Self::BYTES - 1;
 

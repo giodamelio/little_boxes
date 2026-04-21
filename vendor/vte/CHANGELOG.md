@@ -1,6 +1,34 @@
 CHANGELOG
 =========
 
+## 0.14.1
+
+- Crash when partial advance buffer stopped inside some grapheme boundaries
+
+## 0.14.0
+
+- `Parser::advance` now takes byte slices, instead of individual bytes
+- `Parser::advance_until_terminated` allows premature termination,
+    by checking for `Perform::terminated` after each dispatch
+
+## 0.13.1
+
+- Add SCP control support
+- Improve SGR performance
+
+## 0.13.0
+
+- Reexport `cursor_icon` crate in `ansi`
+- Split-out private modes from `Mode` into `PrivateMode`
+- Add `unset_private_mode` and `set_private_mode`
+- Add `report_mode` and `report_private_mode` to handle DECRPM/DECRQM
+
+## 0.12.0
+
+- Add support for OSC 22
+- Add support for kitty keyboard protocol
+- Add support for XTerm's modifyOtherKeys protocol
+
 ## 0.11.1
 
 - Minimum rust version has been bumped to 1.62.1

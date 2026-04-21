@@ -8,20 +8,17 @@ use crate::join_context;
 
 use super::IndexedParallelIterator;
 
-use std::cmp;
-use std::usize;
-
 /// The `ProducerCallback` trait is a kind of generic closure,
 /// [analogous to `FnOnce`][FnOnce]. See [the corresponding section in
 /// the plumbing README][r] for more details.
 ///
 /// [r]: https://github.com/rayon-rs/rayon/blob/main/src/iter/plumbing/README.md#producer-callback
-/// [FnOnce]: https://doc.rust-lang.org/std/ops/trait.FnOnce.html
+/// [FnOnce]: std::ops::FnOnce
 pub trait ProducerCallback<T> {
     /// The type of value returned by this callback. Analogous to
     /// [`Output` from the `FnOnce` trait][Output].
     ///
-    /// [Output]: https://doc.rust-lang.org/std/ops/trait.FnOnce.html#associatedtype.Output
+    /// [Output]: std::ops::FnOnce::Output
     type Output;
 
     /// Invokes the callback with the given producer as argument. The
@@ -77,7 +74,7 @@ pub trait Producer: Send + Sized {
     /// parallel splits to reduce overhead, so this should not be
     /// needed.
     ///
-    /// [`with_min_len`]: ../trait.IndexedParallelIterator.html#method.with_min_len
+    /// [`with_min_len`]: super::IndexedParallelIterator::with_min_len()
     fn min_len(&self) -> usize {
         1
     }
@@ -90,7 +87,7 @@ pub trait Producer: Send + Sized {
     /// attempts to adjust the size of parallel splits to reduce
     /// overhead, so this should not be needed.
     ///
-    /// [`with_max_len`]: ../trait.IndexedParallelIterator.html#method.with_max_len
+    /// [`with_max_len`]: super::IndexedParallelIterator::with_max_len()
     fn max_len(&self) -> usize {
         usize::MAX
     }
@@ -122,9 +119,7 @@ pub trait Producer: Send + Sized {
 /// README][r] for further details.
 ///
 /// [r]: https://github.com/rayon-rs/rayon/blob/main/src/iter/plumbing/README.md
-/// [fold]: https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.fold
-/// [`Folder`]: trait.Folder.html
-/// [`Producer`]: trait.Producer.html
+/// [fold]: Iterator::fold()
 pub trait Consumer<Item>: Send + Sized {
     /// The type of folder that this consumer can be converted into.
     type Folder: Folder<Item, Result = Self::Result>;
@@ -155,7 +150,7 @@ pub trait Consumer<Item>: Send + Sized {
 /// method. At the end, once all items have been consumed, it can then
 /// be converted (using `complete`) into a final value.
 ///
-/// [fold]: https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.fold
+/// [fold]: Iterator::fold()
 pub trait Folder<Item>: Sized {
     /// The type of result that will ultimately be produced by the folder.
     type Result;
@@ -275,7 +270,7 @@ impl Splitter {
         if stolen {
             // This job was stolen!  Reset the number of desired splits to the
             // thread count, if that's more than we had remaining anyway.
-            self.splits = cmp::max(crate::current_num_threads(), self.splits / 2);
+            self.splits = Ord::max(crate::current_num_threads(), self.splits / 2);
             true
         } else if splits > 0 {
             // We have splits remaining, make it so.
@@ -313,14 +308,14 @@ impl LengthSplitter {
     fn new(min: usize, max: usize, len: usize) -> LengthSplitter {
         let mut splitter = LengthSplitter {
             inner: Splitter::new(),
-            min: cmp::max(min, 1),
+            min: Ord::max(min, 1),
         };
 
         // Divide the given length by the max working length to get the minimum
         // number of splits we need to get under that max.  This rounds down,
         // but the splitter actually gives `next_power_of_two()` pieces anyway.
         // e.g. len 12345 / max 100 = 123 min_splits -> 128 pieces.
-        let min_splits = len / cmp::max(max, 1);
+        let min_splits = len / Ord::max(max, 1);
 
         // Only update the value if it's not splitting enough already.
         if min_splits > splitter.inner.splits {
@@ -346,8 +341,8 @@ impl LengthSplitter {
 /// iterators: it is often used as the definition of the
 /// [`drive_unindexed`] or [`drive`] methods.
 ///
-/// [`drive_unindexed`]: ../trait.ParallelIterator.html#tymethod.drive_unindexed
-/// [`drive`]: ../trait.IndexedParallelIterator.html#tymethod.drive
+/// [`drive_unindexed`]: super::ParallelIterator::drive_unindexed()
+/// [`drive`]: super::IndexedParallelIterator::drive()
 pub fn bridge<I, C>(par_iter: I, consumer: C) -> C::Result
 where
     I: IndexedParallelIterator,
@@ -376,7 +371,7 @@ where
 }
 
 /// This helper function is used to "connect" a producer and a
-/// consumer. You may prefer to call [`bridge`], which wraps this
+/// consumer. You may prefer to call [`bridge()`], which wraps this
 /// function. This function will draw items from `producer` and feed
 /// them to `consumer`, splitting and creating parallel tasks when
 /// needed.
@@ -385,9 +380,8 @@ where
 /// iterators: it is often used as the definition of the
 /// [`drive_unindexed`] or [`drive`] methods.
 ///
-/// [`bridge`]: fn.bridge.html
-/// [`drive_unindexed`]: ../trait.ParallelIterator.html#tymethod.drive_unindexed
-/// [`drive`]: ../trait.IndexedParallelIterator.html#tymethod.drive
+/// [`drive_unindexed`]: super::ParallelIterator::drive_unindexed()
+/// [`drive`]: super::IndexedParallelIterator::drive()
 pub fn bridge_producer_consumer<P, C>(len: usize, producer: P, consumer: C) -> C::Result
 where
     P: Producer,
@@ -440,9 +434,7 @@ where
     }
 }
 
-/// A variant of [`bridge_producer_consumer`] where the producer is an unindexed producer.
-///
-/// [`bridge_producer_consumer`]: fn.bridge_producer_consumer.html
+/// A variant of [`bridge_producer_consumer()`] where the producer is an unindexed producer.
 pub fn bridge_unindexed<P, C>(producer: P, consumer: C) -> C::Result
 where
     P: UnindexedProducer,

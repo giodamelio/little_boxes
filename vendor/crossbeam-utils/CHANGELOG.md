@@ -1,3 +1,11 @@
+# Version 0.8.21
+
+- Improve implementation of `CachePadded`. (#1152)
+
+# Version 0.8.20
+
+- Implement `Display` for `CachePadded`. (#1097)
+
 # Version 0.8.19
 
 - Remove dependency on `cfg-if`. (#1072)
@@ -25,7 +33,7 @@
 
 - Add `#[clippy::has_significant_drop]` to `ShardedLock{Read,Write}Guard`. (#958)
 - Improve handling of very large timeout. (#953)
-- Soft-deprecate `thread::scope()` in favor of the more efficient `std::thread::scope` that stabilized on Rust 1.63. (#954)
+- Soft-deprecate `thread::scope()` in favor of the more efficient `std::thread::scope` that stabilized in Rust 1.63. (#954)
 
 # Version 0.8.14
 

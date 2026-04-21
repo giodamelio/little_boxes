@@ -1,11 +1,11 @@
 use std::cmp::Ordering;
 
+use crate::ArgAction;
+use crate::INTERNAL_ERROR_MSG;
 use crate::builder::ValueRange;
 use crate::mkeymap::KeyType;
 use crate::util::FlatSet;
 use crate::util::Id;
-use crate::ArgAction;
-use crate::INTERNAL_ERROR_MSG;
 use crate::{Arg, Command, ValueHint};
 
 pub(crate) fn assert_app(cmd: &Command) {
@@ -30,8 +30,11 @@ pub(crate) fn assert_app(cmd: &Command) {
             .map(|x| x.get_id())
             .collect::<Vec<_>>();
 
-        assert_eq!(version_needed, Vec::<&str>::new(), "Command {}: `ArgAction::Version` used without providing Command::version or Command::long_version"
-            ,cmd.get_name()
+        assert_eq!(
+            version_needed,
+            Vec::<&str>::new(),
+            "Command {}: `ArgAction::Version` used without providing Command::version or Command::long_version",
+            cmd.get_name()
         );
     }
 
@@ -45,7 +48,12 @@ pub(crate) fn assert_app(cmd: &Command) {
         }
 
         if let Some(l) = sc.get_long_flag().as_ref() {
-            assert!(!l.starts_with('-'), "Command {}: long_flag {:?} must not start with a `-`, that will be handled by the parser", sc.get_name(), l);
+            assert!(
+                !l.starts_with('-'),
+                "Command {}: long_flag {:?} must not start with a `-`, that will be handled by the parser",
+                sc.get_name(),
+                l
+            );
             long_flags.push(Flag::Command(format!("--{l}"), sc.get_name()));
         }
 
@@ -73,7 +81,12 @@ pub(crate) fn assert_app(cmd: &Command) {
         }
 
         if let Some(l) = arg.get_long() {
-            assert!(!l.starts_with('-'), "Argument {}: long {:?} must not start with a `-`, that will be handled by the parser", arg.get_id(), l);
+            assert!(
+                !l.starts_with('-'),
+                "Argument {}: long {:?} must not start with a `-`, that will be handled by the parser",
+                arg.get_id(),
+                l
+            );
             long_flags.push(Flag::Arg(format!("--{l}"), arg.get_id().as_str()));
         }
 
@@ -84,11 +97,11 @@ pub(crate) fn assert_app(cmd: &Command) {
         // Name conflicts
         if let Some((first, second)) = cmd.two_args_of(|x| x.get_id() == arg.get_id()) {
             panic!(
-            "Command {}: Argument names must be unique, but '{}' is in use by more than one argument or group{}",
-            cmd.get_name(),
-            arg.get_id(),
-            duplicate_tip(cmd, first, second),
-        );
+                "Command {}: Argument names must be unique, but '{}' is in use by more than one argument or group{}",
+                cmd.get_name(),
+                arg.get_id(),
+                duplicate_tip(cmd, first, second),
+            );
         }
 
         // Long conflicts
@@ -139,12 +152,18 @@ pub(crate) fn assert_app(cmd: &Command) {
         }
 
         // requires, r_if, r_unless
-        for req in &arg.requires {
+        for (_predicate, req_id) in &arg.requires {
             assert!(
-                cmd.id_exists(&req.1),
+                &arg.id != req_id,
+                "Argument {} cannot require itself",
+                arg.get_id()
+            );
+
+            assert!(
+                cmd.id_exists(req_id),
                 "Command {}: Argument or group '{}' specified in 'requires*' for '{}' does not exist",
                 cmd.get_name(),
-                req.1,
+                req_id,
                 arg.get_id(),
             );
         }
@@ -158,7 +177,7 @@ pub(crate) fn assert_app(cmd: &Command) {
             assert!(
                 cmd.id_exists(&req.0),
                 "Command {}: Argument or group '{}' specified in 'required_if_eq*' for '{}' does not exist",
-                    cmd.get_name(),
+                cmd.get_name(),
                 req.0,
                 arg.get_id()
             );
@@ -173,7 +192,7 @@ pub(crate) fn assert_app(cmd: &Command) {
             assert!(
                 cmd.id_exists(&req.0),
                 "Command {}: Argument or group '{}' specified in 'required_if_eq_all' for '{}' does not exist",
-                    cmd.get_name(),
+                cmd.get_name(),
                 req.0,
                 arg.get_id()
             );
@@ -188,7 +207,7 @@ pub(crate) fn assert_app(cmd: &Command) {
             assert!(
                 cmd.id_exists(req),
                 "Command {}: Argument or group '{}' specified in 'required_unless*' for '{}' does not exist",
-                    cmd.get_name(),
+                cmd.get_name(),
                 req,
                 arg.get_id(),
             );
@@ -203,7 +222,7 @@ pub(crate) fn assert_app(cmd: &Command) {
             assert!(
                 cmd.id_exists(req),
                 "Command {}: Argument or group '{}' specified in 'required_unless*' for '{}' does not exist",
-                    cmd.get_name(),
+                cmd.get_name(),
                 req,
                 arg.get_id(),
             );
@@ -214,7 +233,7 @@ pub(crate) fn assert_app(cmd: &Command) {
             assert!(
                 cmd.id_exists(req),
                 "Command {}: Argument or group '{}' specified in 'conflicts_with*' for '{}' does not exist",
-                    cmd.get_name(),
+                cmd.get_name(),
                 req,
                 arg.get_id(),
             );
@@ -225,7 +244,7 @@ pub(crate) fn assert_app(cmd: &Command) {
             assert!(
                 cmd.id_exists(req),
                 "Command {}: Argument or group '{}' specified in 'overrides_with*' for '{}' does not exist",
-                    cmd.get_name(),
+                cmd.get_name(),
                 req,
                 arg.get_id(),
             );
@@ -235,13 +254,13 @@ pub(crate) fn assert_app(cmd: &Command) {
             assert!(
                 arg.get_long().is_none(),
                 "Command {}: Flags or Options cannot have last(true) set. '{}' has both a long and last(true) set.",
-                    cmd.get_name(),
+                cmd.get_name(),
                 arg.get_id()
             );
             assert!(
                 arg.get_short().is_none(),
                 "Command {}: Flags or Options cannot have last(true) set. '{}' has both a short and last(true) set.",
-                    cmd.get_name(),
+                cmd.get_name(),
                 arg.get_id()
             );
         }
@@ -249,7 +268,7 @@ pub(crate) fn assert_app(cmd: &Command) {
         assert!(
             !(arg.is_required_set() && arg.is_global_set()),
             "Command {}: Global arguments cannot be required.\n\n\t'{}' is marked as both global and required",
-                    cmd.get_name(),
+            cmd.get_name(),
             arg.get_id()
         );
 
@@ -264,7 +283,7 @@ pub(crate) fn assert_app(cmd: &Command) {
             assert!(
                 arg.is_trailing_var_arg_set() || arg.is_last_set(),
                 "Command {}: Positional argument '{}' has hint CommandWithArguments, so Command must have `trailing_var_arg(true)` or `last(true)` set.",
-                    cmd.get_name(),
+                cmd.get_name(),
                 arg.get_id()
             );
         }
@@ -355,7 +374,7 @@ pub(crate) fn assert_app(cmd: &Command) {
         assert!(
             !help_template.to_string().contains("{flags}"),
             "Command {}: {}",
-                    cmd.get_name(),
+            cmd.get_name(),
             "`{flags}` template variable was removed in clap3, they are now included in `{options}`",
         );
         assert!(
@@ -370,7 +389,7 @@ pub(crate) fn assert_app(cmd: &Command) {
             "Command {}: {}",
             cmd.get_name(),
             "`{bin}` template variable was removed in clap5, use `{name}` instead"
-        )
+        );
     }
 
     cmd._panic_on_missing_help(cmd.is_help_expected_set());
@@ -398,26 +417,24 @@ enum Flag<'a> {
 }
 
 impl PartialEq for Flag<'_> {
-    fn eq(&self, other: &Flag) -> bool {
+    fn eq(&self, other: &Flag<'_>) -> bool {
         self.cmp(other) == Ordering::Equal
     }
 }
 
 impl PartialOrd for Flag<'_> {
-    fn partial_cmp(&self, other: &Flag) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Flag<'_>) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for Flag<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
-        use Flag::*;
-
         match (self, other) {
-            (Command(s1, _), Command(s2, _))
-            | (Arg(s1, _), Arg(s2, _))
-            | (Command(s1, _), Arg(s2, _))
-            | (Arg(s1, _), Command(s2, _)) => {
+            (Flag::Command(s1, _), Flag::Command(s2, _))
+            | (Flag::Arg(s1, _), Flag::Arg(s2, _))
+            | (Flag::Command(s1, _), Flag::Arg(s2, _))
+            | (Flag::Arg(s1, _), Flag::Command(s2, _)) => {
                 if s1 == s2 {
                     Ordering::Equal
                 } else {
@@ -428,20 +445,19 @@ impl Ord for Flag<'_> {
     }
 }
 
-fn detect_duplicate_flags(flags: &[Flag], short_or_long: &str) {
-    use Flag::*;
-
+fn detect_duplicate_flags(flags: &[Flag<'_>], short_or_long: &str) {
     for (one, two) in find_duplicates(flags) {
         match (one, two) {
-            (Command(flag, one), Command(_, another)) if one != another => panic!(
+            (Flag::Command(flag, one), Flag::Command(_, another)) if one != another => panic!(
                 "the '{flag}' {short_or_long} flag is specified for both '{one}' and '{another}' subcommands"
             ),
 
-            (Arg(flag, one), Arg(_, another)) if one != another => panic!(
+            (Flag::Arg(flag, one), Flag::Arg(_, another)) if one != another => panic!(
                 "{short_or_long} option names must be unique, but '{flag}' is in use by both '{one}' and '{another}'"
             ),
 
-            (Arg(flag, arg), Command(_, sub)) | (Command(flag, sub), Arg(_, arg)) => panic!(
+            (Flag::Arg(flag, arg), Flag::Command(_, sub))
+            | (Flag::Command(flag, sub), Flag::Arg(_, arg)) => panic!(
                 "the '{flag}' {short_or_long} flag for the '{arg}' argument conflicts with the short flag \
                      for '{sub}' subcommand"
             ),
@@ -467,22 +483,6 @@ fn find_duplicates<T: PartialEq>(slice: &[T]) -> impl Iterator<Item = (&T, &T)> 
 
 fn assert_app_flags(cmd: &Command) {
     macro_rules! checker {
-        ($a:ident requires $($b:ident)|+) => {
-            if cmd.$a() {
-                let mut s = String::new();
-
-                $(
-                    if !cmd.$b() {
-                        use std::fmt::Write;
-                        write!(&mut s, "  AppSettings::{} is required when AppSettings::{} is set.\n", std::stringify!($b), std::stringify!($a)).unwrap();
-                    }
-                )+
-
-                if !s.is_empty() {
-                    panic!("{s}")
-                }
-            }
-        };
         ($a:ident conflicts $($b:ident)|+) => {
             if cmd.$a() {
                 let mut s = String::new();
@@ -645,7 +645,6 @@ fn _verify_positionals(cmd: &Command) -> bool {
                     continue;
                 }
                 found = true;
-                continue;
             } else {
                 found = false;
             }
@@ -670,7 +669,6 @@ fn _verify_positionals(cmd: &Command) -> bool {
                 //      $ prog r1 -- r2
                 //      $ prog r1 o1 -- r2
                 found = true;
-                continue;
             }
         }
     }
@@ -704,14 +702,14 @@ fn assert_arg(arg: &Arg) {
         arg.get_id(),
     );
 
-    if arg.is_takes_value_set() {
-        assert!(
-            arg.get_action().takes_values(),
-            "Argument `{}`'s selected action {:?} contradicts `takes_value`",
-            arg.get_id(),
-            arg.get_action()
-        );
-    }
+    assert!(
+        arg.get_num_args().unwrap_or(1.into()).max_values()
+            <= arg.get_action().max_num_args().max_values(),
+        "Argument `{}`'s action {:?} is incompatible with `num_args({:?})`",
+        arg.get_id(),
+        arg.get_action(),
+        arg.get_num_args().unwrap_or(1.into())
+    );
     if let Some(action_type_id) = arg.get_action().value_type_id() {
         assert_eq!(
             action_type_id,
@@ -735,7 +733,7 @@ fn assert_arg(arg: &Arg) {
                 arg.is_multiple_values_set(),
                 "Argument '{}' uses hint CommandWithArguments and must accept multiple values",
                 arg.get_id()
-            )
+            );
         }
     }
 
@@ -747,7 +745,7 @@ fn assert_arg(arg: &Arg) {
         );
         assert!(
             arg.is_takes_value_set(),
-            "Argument '{}` is positional and it must take a value but action is {:?}{}",
+            "Argument '{}' is positional and it must take a value but action is {:?}{}",
             arg.get_id(),
             arg.get_action(),
             if arg.get_id() == Id::HELP {

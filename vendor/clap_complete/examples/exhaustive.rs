@@ -1,9 +1,13 @@
 use clap::builder::PossibleValue;
-#[cfg(feature = "unstable-dynamic")]
-use clap::{FromArgMatches, Subcommand};
-use clap_complete::{generate, Generator, Shell};
+use clap_complete::{Generator, Shell, generate};
 
 fn main() {
+    #[cfg(feature = "unstable-dynamic")]
+    clap_complete::CompleteEnv::with_factory(cli)
+        // Avoid tests snapshotting a path into `target/`
+        .completer("exhaustive")
+        .complete();
+
     let matches = cli().get_matches();
     if let Some(generator) = matches.get_one::<Shell>("generate") {
         let mut cmd = cli();
@@ -12,39 +16,49 @@ fn main() {
         return;
     }
 
-    #[cfg(feature = "unstable-dynamic")]
-    if let Ok(completions) =
-        clap_complete::dynamic::shells::CompleteCommand::from_arg_matches(&matches)
-    {
-        completions.complete(&mut cli());
-        return;
-    };
-
-    println!("{:?}", matches);
+    println!("{matches:?}");
 }
 
-fn print_completions<G: Generator>(gen: G, cmd: &mut clap::Command) {
-    generate(gen, cmd, cmd.get_name().to_string(), &mut std::io::stdout());
+fn print_completions<G: Generator>(generator: G, cmd: &mut clap::Command) {
+    generate(
+        generator,
+        cmd,
+        cmd.get_name().to_string(),
+        &mut std::io::stdout(),
+    );
 }
+
+const EMPTY: [&str; 0] = [];
 
 #[allow(clippy::let_and_return)]
 fn cli() -> clap::Command {
-    let cli = clap::Command::new("exhaustive")
-        .version("3.0")
-        .propagate_version(true)
+    clap::Command::new("exhaustive")
         .args([
-            clap::Arg::new("global")
-                .long("global")
-                .global(true)
-                .action(clap::ArgAction::SetTrue)
-                .help("everywhere"),
             clap::Arg::new("generate")
                 .long("generate")
                 .value_name("SHELL")
                 .value_parser(clap::value_parser!(Shell))
                 .help("generate"),
+            clap::Arg::new("empty-choice")
+                .long("empty-choice")
+                .value_parser(EMPTY),
         ])
         .subcommands([
+            clap::Command::new("empty")
+                .disable_help_subcommand(true)
+                .disable_help_flag(true),
+            clap::Command::new("global")
+                .version("3.0")
+                .propagate_version(true)
+                .args([clap::Arg::new("global")
+                    .long("global")
+                    .global(true)
+                    .action(clap::ArgAction::SetTrue)
+                    .help("everywhere")])
+                .subcommands([
+                    clap::Command::new("one").subcommand(clap::Command::new("one-one")),
+                    clap::Command::new("two"),
+                ]),
             clap::Command::new("action").args([
                 clap::Arg::new("set-true")
                     .long("set-true")
@@ -93,6 +107,7 @@ fn cli() -> clap::Command {
                         .long("choice")
                         .action(clap::ArgAction::Set)
                         .value_parser(clap::builder::PossibleValuesParser::new([
+                            PossibleValue::new("another shell").help("something with a space"),
                             PossibleValue::new("bash").help("bash (shell)"),
                             PossibleValue::new("fish").help("fish shell"),
                             PossibleValue::new("zsh").help("zsh shell"),
@@ -196,8 +211,5 @@ fn cli() -> clap::Command {
                     .long("email")
                     .value_hint(clap::ValueHint::EmailAddress),
             ]),
-        ]);
-    #[cfg(feature = "unstable-dynamic")]
-    let cli = clap_complete::dynamic::shells::CompleteCommand::augment_subcommands(cli);
-    cli
+        ])
 }

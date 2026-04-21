@@ -1,21 +1,15 @@
-use core::mem::MaybeUninit;
-use core::ptr;
 #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
 use core::ops::{BitAnd, BitOr, Not};
+use core::{mem::MaybeUninit, ptr};
 
 use super::io::Io;
 
-#[repr(packed)]
+#[repr(transparent)]
 pub struct Mmio<T> {
     value: MaybeUninit<T>,
 }
 
 impl<T> Mmio<T> {
-    /// Create a new Mmio without initializing
-    #[deprecated = "unsound because it's possible to read even though it's uninitialized"]
-    pub fn new() -> Self {
-        unsafe { Self::uninit() }
-    }
     pub unsafe fn zeroed() -> Self {
         Self {
             value: MaybeUninit::zeroed(),
@@ -35,7 +29,10 @@ impl<T> Mmio<T> {
 
 // Generic implementation (WARNING: requires aligned pointers!)
 #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-impl<T> Io for Mmio<T> where T: Copy + PartialEq + BitAnd<Output = T> + BitOr<Output = T> + Not<Output = T> {
+impl<T> Io for Mmio<T>
+where
+    T: Copy + PartialEq + BitAnd<Output = T> + BitOr<Output = T> + Not<Output = T>,
+{
     type Value = T;
 
     fn read(&self) -> T {

@@ -14,9 +14,9 @@
 //! On non-Windows platforms these functions leave paths unmodified, so it's safe to use them
 //! unconditionally for all platforms.
 //!
-//! Parsing is based on https://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
+//! Parsing is based on <https://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx>
 //!
-//! [Project homepage](https://crates.rs/crates/dunce).
+//! [Project homepage](https://lib.rs/crates/dunce).
 #![doc(html_logo_url = "https://assets.gitlab-static.net/uploads/-/system/project/avatar/4717715/dyc.png")]
 
 #[cfg(any(windows, test))]
@@ -30,6 +30,7 @@ use std::path::{Component, Prefix};
 use std::path::{Path, PathBuf};
 
 /// Takes any path, and when possible, converts Windows UNC paths to regular paths.
+/// If the path can't be converted, it's returned unmodified.
 ///
 /// On non-Windows this is no-op.
 ///
@@ -37,19 +38,22 @@ use std::path::{Path, PathBuf};
 /// but `\\?\C:\COM` will be left as-is (due to a reserved filename).
 ///
 /// Use this to pass arbitrary paths to programs that may not be UNC-aware.
+///
 /// It's generally safe to pass UNC paths to legacy programs, because
-/// the paths contain a reserved character, so will gracefully fail
-/// if used with wrong APIs.
+/// these paths contain a reserved prefix, so will gracefully fail
+/// if used with legacy APIs that don't support UNC.
 ///
 /// This function does not perform any I/O.
 ///
 /// Currently paths with unpaired surrogates aren't converted even if they
-/// can be due to limitations of Rust's `OsStr` API.
+/// could be, due to limitations of Rust's `OsStr` API.
+///
+/// To check if a path remained as UNC, use `path.as_os_str().as_encoded_bytes().starts_with(b"\\\\")`.
 #[inline]
 pub fn simplified(path: &Path) -> &Path {
     if is_safe_to_strip_unc(path) {
         // unfortunately we can't safely strip prefix from a non-Unicode path
-        path.to_str().and_then(|s| s.get(4..)).map(Path::new).unwrap_or(path)
+        path.to_str().and_then(|s| s.get(4..)).map_or(path, Path::new)
     } else {
         path
     }
@@ -94,41 +98,32 @@ fn windows_char_len(s: &OsStr) -> usize {
 
 #[cfg(any(windows,test))]
 fn is_valid_filename(file_name: &OsStr) -> bool {
-    let file_name = file_name.as_ref();
-    if windows_char_len(file_name) > 255 {
+    if file_name.len() > 255 && windows_char_len(file_name) > 255 {
         return false;
     }
 
     // Non-unicode is safe, but Rust can't reasonably losslessly operate on such strings
-    let file_name = if let Some(s) = file_name.to_str() {
-        s
+    let byte_str = if let Some(s) = file_name.to_str() {
+        s.as_bytes()
     } else {
         return false;
     };
-    if file_name.is_empty() {
+    if byte_str.is_empty() {
         return false;
     }
-    // Only ASCII subset is checked, and UTF-8 is safe for that
-    let byte_str = file_name.as_bytes();
-    for &c in byte_str {
-        match c {
-            0..=31 |
-            b'<' | b'>' | b':' | b'"' |
-            b'/' | b'\\' | b'|' | b'?' | b'*' => return false,
-            _ => {},
-        }
+    // Only ASCII subset is checked, and WTF-8/UTF-8 is safe for that
+    if byte_str.iter().any(|&c| matches!(c, 0..=31 | b'<' | b'>' | b':' | b'"' | b'/' | b'\\' | b'|' | b'?' | b'*')) {
+        return false
     }
-
     // Filename can't end with . or space (except before extension, but this checks the whole name)
-    let last_char = byte_str[byte_str.len()-1];
-    if last_char == b' ' || last_char == b'.' {
+    if matches!(byte_str.last(), Some(b' ' | b'.')) {
         return false;
     }
     true
 }
 
 #[cfg(any(windows, test))]
-const RESERVED_NAMES: [&'static str; 22] = [
+const RESERVED_NAMES: [&str; 22] = [
     "AUX", "NUL", "PRN", "CON", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
@@ -136,18 +131,12 @@ const RESERVED_NAMES: [&'static str; 22] = [
 #[cfg(any(windows, test))]
 fn is_reserved<P: AsRef<OsStr>>(file_name: P) -> bool {
     // con.txt is reserved too
-    if let Some(stem) = Path::new(&file_name).file_stem() {
-        // all reserved DOS names have ASCII-compatible stem
-        if let Some(name) = stem.to_str() {
-            // "con.. .txt" is "CON" for DOS
-            let trimmed = right_trim(name);
-            if trimmed.len() <= 4 {
-                for name in &RESERVED_NAMES {
-                    if name.eq_ignore_ascii_case(trimmed) {
-                        return true;
-                    }
-                }
-            }
+    // all reserved DOS names have ASCII-compatible stem
+    if let Some(name) = Path::new(&file_name).file_stem().and_then(|s| s.to_str()) {
+        // "con.. .txt" is "CON" for DOS
+        let trimmed = right_trim(name);
+        if trimmed.len() <= 4 && RESERVED_NAMES.into_iter().any(|name| trimmed.eq_ignore_ascii_case(name)) {
+            return true;
         }
     }
     false
@@ -155,7 +144,7 @@ fn is_reserved<P: AsRef<OsStr>>(file_name: P) -> bool {
 
 #[cfg(not(windows))]
 #[inline]
-fn is_safe_to_strip_unc(_path: &Path) -> bool {
+const fn is_safe_to_strip_unc(_path: &Path) -> bool {
     false
 }
 
@@ -184,7 +173,9 @@ fn is_safe_to_strip_unc(path: &Path) -> bool {
         };
     }
 
-    if windows_char_len(path.as_os_str()) > 260 { // However, if the path is going to be used as a directory it's 248
+    let path_os_str = path.as_os_str();
+    // However, if the path is going to be used as a directory it's 248
+    if path_os_str.len() > 260 && windows_char_len(path_os_str) > 260 {
         return false;
     }
     true
@@ -192,18 +183,8 @@ fn is_safe_to_strip_unc(path: &Path) -> bool {
 
 /// Trim '.' and ' '
 #[cfg(any(windows, test))]
-fn right_trim(mut s: &str) -> &str {
-    while s.len() > 0 {
-        let last = s.len()-1;
-        unsafe {
-            if s.as_bytes()[last] == b'.' || s.as_bytes()[last] == b' ' {
-                s = s.get_unchecked(0..last) // trim of ASCII byte can't break UTF-8
-            } else {
-                break;
-            }
-        }
-    }
-    s
+fn right_trim(s: &str) -> &str {
+    s.trim_end_matches([' ','.'])
 }
 
 #[test]

@@ -1,9 +1,15 @@
 use crate::builder::Str;
+#[cfg(feature = "string")]
+use std::borrow::Cow;
 
 /// A UTF-8-encoded fixed string
 ///
+/// <div class="warning">
+///
 /// **NOTE:** To support dynamic values (i.e. `OsString`), enable the `string`
 /// feature
+///
+/// </div>
 #[derive(Default, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct OsStr {
     name: Inner,
@@ -85,15 +91,15 @@ impl From<&'_ std::ffi::OsString> for OsStr {
 }
 
 #[cfg(feature = "string")]
-impl From<std::string::String> for OsStr {
-    fn from(name: std::string::String) -> Self {
+impl From<String> for OsStr {
+    fn from(name: String) -> Self {
         Self::from_string(name.into())
     }
 }
 
 #[cfg(feature = "string")]
-impl From<&'_ std::string::String> for OsStr {
-    fn from(name: &'_ std::string::String) -> Self {
+impl From<&'_ String> for OsStr {
+    fn from(name: &'_ String) -> Self {
         Self::from_ref(name.as_str().as_ref())
     }
 }
@@ -119,6 +125,16 @@ impl From<&'static str> for OsStr {
 impl From<&'_ &'static str> for OsStr {
     fn from(name: &'_ &'static str) -> Self {
         Self::from_static_ref((*name).as_ref())
+    }
+}
+
+#[cfg(feature = "string")]
+impl From<Cow<'static, str>> for OsStr {
+    fn from(cow: Cow<'static, str>) -> Self {
+        match cow {
+            Cow::Borrowed(s) => Self::from(s),
+            Cow::Owned(s) => Self::from(s),
+        }
     }
 }
 
@@ -210,13 +226,13 @@ impl PartialEq<OsStr> for &'_ std::ffi::OsStr {
     }
 }
 
-impl PartialEq<std::string::String> for OsStr {
+impl PartialEq<String> for OsStr {
     #[inline]
-    fn eq(&self, other: &std::string::String) -> bool {
+    fn eq(&self, other: &String) -> bool {
         PartialEq::eq(self.as_os_str(), other.as_str())
     }
 }
-impl PartialEq<OsStr> for std::string::String {
+impl PartialEq<OsStr> for String {
     #[inline]
     fn eq(&self, other: &OsStr) -> bool {
         PartialEq::eq(self.as_str(), other.as_os_str())
@@ -322,5 +338,27 @@ impl std::hash::Hash for Inner {
     #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.as_os_str().hash(state);
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "string")]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(feature = "string")]
+    fn from_cow_borrowed() {
+        let cow = Cow::Borrowed("hello");
+        let osstr = OsStr::from(cow);
+        assert_eq!(osstr, OsStr::from("hello"));
+    }
+
+    #[test]
+    #[cfg(feature = "string")]
+    fn from_cow_owned() {
+        let cow = Cow::Owned("world".to_string());
+        let osstr = OsStr::from(cow);
+        assert_eq!(osstr, OsStr::from("world"));
     }
 }

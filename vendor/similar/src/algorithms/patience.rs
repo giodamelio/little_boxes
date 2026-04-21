@@ -10,9 +10,9 @@
 //! by Pierre-Étienne Meunier.
 use std::hash::Hash;
 use std::ops::{Index, Range};
-use std::time::Instant;
 
 use crate::algorithms::{myers, DiffHook, NoFinishHook, Replace};
+use crate::deadline_support::Instant;
 
 use super::utils::{unique, UniqueItem};
 

@@ -6,7 +6,7 @@ use super::*;
 #[test]
 #[cfg(feature = "term-svg")]
 fn term_svg_eq() {
-    let left = Data::from(DataInner::TermSvg(
+    let left = Data::with_inner(DataInner::TermSvg(
         "
 irrelevant
   <text>relevant
@@ -15,7 +15,7 @@ irrelevant
 irrelevant"
             .to_owned(),
     ));
-    let right = Data::from(DataInner::TermSvg(
+    let right = Data::with_inner(DataInner::TermSvg(
         "
 irrelevant
   <text>relevant
@@ -26,7 +26,7 @@ irrelevant"
     ));
     assert_eq!(left, right);
 
-    let left = Data::from(DataInner::TermSvg(
+    let left = Data::with_inner(DataInner::TermSvg(
         "
 irrelevant 1
   <text>relevant
@@ -35,7 +35,7 @@ irrelevant 1
 irrelevant 1"
             .to_owned(),
     ));
-    let right = Data::from(DataInner::TermSvg(
+    let right = Data::with_inner(DataInner::TermSvg(
         "
 irrelevant 2
   <text>relevant
@@ -50,7 +50,7 @@ irrelevant 2"
 #[test]
 #[cfg(feature = "term-svg")]
 fn term_svg_ne() {
-    let left = Data::from(DataInner::TermSvg(
+    let left = Data::with_inner(DataInner::TermSvg(
         "
 irrelevant 1
   <text>relevant 1
@@ -59,7 +59,7 @@ irrelevant 1
 irrelevant 1"
             .to_owned(),
     ));
-    let right = Data::from(DataInner::TermSvg(
+    let right = Data::with_inner(DataInner::TermSvg(
         "
 irrelevant 2
   <text>relevant 2
@@ -98,7 +98,7 @@ fn binary_to_text() {
     let binary = String::from("test").into_bytes();
     let d = Data::binary(binary);
     let text = d.coerce_to(DataFormat::Text);
-    assert_eq!(DataFormat::Text, text.format())
+    assert_eq!(DataFormat::Text, text.format());
 }
 
 #[test]
@@ -215,361 +215,15 @@ fn json_to_text_coerce_equals_render() {
     assert_eq!(Data::text(d.render().unwrap()), text);
 }
 
-// Tests for normalization on json
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_paths_and_lines() {
-    let json = json!({"name": "John\\Doe\r\n"});
-    let data = Data::json(json);
-    let data = data.normalize(NormalizePaths);
-    assert_eq!(Data::json(json!({"name": "John/Doe\r\n"})), data);
-    let data = data.normalize(NormalizeNewlines);
-    assert_eq!(Data::json(json!({"name": "John/Doe\n"})), data);
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_obj_paths_and_lines() {
-    let json = json!({
-        "person": {
-            "name": "John\\Doe\r\n",
-            "nickname": "Jo\\hn\r\n",
-        }
-    });
-    let data = Data::json(json);
-    let data = data.normalize(NormalizePaths);
-    let assert = json!({
-        "person": {
-            "name": "John/Doe\r\n",
-            "nickname": "Jo/hn\r\n",
-        }
-    });
-    assert_eq!(Data::json(assert), data);
-    let data = data.normalize(NormalizeNewlines);
-    let assert = json!({
-        "person": {
-            "name": "John/Doe\n",
-            "nickname": "Jo/hn\n",
-        }
-    });
-    assert_eq!(Data::json(assert), data);
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_array_paths_and_lines() {
-    let json = json!({"people": ["John\\Doe\r\n", "Jo\\hn\r\n"]});
-    let data = Data::json(json);
-    let data = data.normalize(NormalizePaths);
-    let paths = json!({"people": ["John/Doe\r\n", "Jo/hn\r\n"]});
-    assert_eq!(Data::json(paths), data);
-    let data = data.normalize(NormalizeNewlines);
-    let new_lines = json!({"people": ["John/Doe\n", "Jo/hn\n"]});
-    assert_eq!(Data::json(new_lines), data);
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_array_obj_paths_and_lines() {
-    let json = json!({
-        "people": [
-            {
-                "name": "John\\Doe\r\n",
-                "nickname": "Jo\\hn\r\n",
-            }
-        ]
-    });
-    let data = Data::json(json);
-    let data = data.normalize(NormalizePaths);
-    let paths = json!({
-        "people": [
-            {
-                "name": "John/Doe\r\n",
-                "nickname": "Jo/hn\r\n",
-            }
-        ]
-    });
-    assert_eq!(Data::json(paths), data);
-    let data = data.normalize(NormalizeNewlines);
-    let new_lines = json!({
-        "people": [
-            {
-                "name": "John/Doe\n",
-                "nickname": "Jo/hn\n",
-            }
-        ]
-    });
-    assert_eq!(Data::json(new_lines), data);
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_matches_string() {
-    let exp = json!({"name": "{...}"});
-    let expected = Data::json(exp);
-    let actual = json!({"name": "JohnDoe"});
-    let actual =
-        Data::json(actual).normalize(NormalizeMatches::new(&Default::default(), &expected));
-    if let (DataInner::Json(exp), DataInner::Json(act)) = (expected.inner, actual.inner) {
-        assert_eq!(exp, act);
-    }
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_matches_array() {
-    let exp = json!({"people": "{...}"});
-    let expected = Data::json(exp);
-    let actual = json!({
-        "people": [
-            {
-                "name": "JohnDoe",
-                "nickname": "John",
-            }
-        ]
-    });
-    let actual =
-        Data::json(actual).normalize(NormalizeMatches::new(&Default::default(), &expected));
-    if let (DataInner::Json(exp), DataInner::Json(act)) = (expected.inner, actual.inner) {
-        assert_eq!(exp, act);
-    }
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_matches_obj() {
-    let exp = json!({"people": "{...}"});
-    let expected = Data::json(exp);
-    let actual = json!({
-        "people": {
-            "name": "JohnDoe",
-            "nickname": "John",
-        }
-    });
-    let actual =
-        Data::json(actual).normalize(NormalizeMatches::new(&Default::default(), &expected));
-    if let (DataInner::Json(exp), DataInner::Json(act)) = (expected.inner, actual.inner) {
-        assert_eq!(exp, act);
-    }
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_matches_diff_order_array() {
-    let exp = json!({
-        "people": ["John", "Jane"]
-    });
-    let expected = Data::json(exp);
-    let actual = json!({
-        "people": ["Jane", "John"]
-    });
-    let actual =
-        Data::json(actual).normalize(NormalizeMatches::new(&Default::default(), &expected));
-    if let (DataInner::Json(exp), DataInner::Json(act)) = (expected.inner, actual.inner) {
-        assert_ne!(exp, act);
-    }
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_wildcard_object_first() {
-    let exp = json!({
-        "people": [
-            "{...}",
-            {
-                "name": "three",
-                "nickname": "3",
-            }
-        ]
-    });
-    let expected = Data::json(exp);
-    let actual = json!({
-        "people": [
-            {
-                "name": "one",
-                "nickname": "1",
-            },
-            {
-                "name": "two",
-                "nickname": "2",
-            },
-            {
-                "name": "three",
-                "nickname": "3",
-            }
-        ]
-    });
-    let actual =
-        Data::json(actual).normalize(NormalizeMatches::new(&Default::default(), &expected));
-    if let (DataInner::Json(exp), DataInner::Json(act)) = (expected.inner, actual.inner) {
-        assert_eq!(exp, act);
-    }
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_wildcard_array_first() {
-    let exp = json!([
-        "{...}",
-        {
-            "name": "three",
-            "nickname": "3",
-        }
-    ]);
-    let expected = Data::json(exp);
-    let actual = json!([
-        {
-            "name": "one",
-            "nickname": "1",
-        },
-        {
-            "name": "two",
-            "nickname": "2",
-        },
-        {
-            "name": "three",
-            "nickname": "3",
-        }
-    ]);
-    let actual =
-        Data::json(actual).normalize(NormalizeMatches::new(&Default::default(), &expected));
-    if let (DataInner::Json(exp), DataInner::Json(act)) = (expected.inner, actual.inner) {
-        assert_eq!(exp, act);
-    }
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_wildcard_array_first_last() {
-    let exp = json!([
-        "{...}",
-        {
-            "name": "two",
-            "nickname": "2",
-        },
-        "{...}"
-    ]);
-    let expected = Data::json(exp);
-    let actual = json!([
-        {
-            "name": "one",
-            "nickname": "1",
-        },
-        {
-            "name": "two",
-            "nickname": "2",
-        },
-        {
-            "name": "three",
-            "nickname": "3",
-        },
-        {
-            "name": "four",
-            "nickname": "4",
-        }
-    ]);
-    let actual =
-        Data::json(actual).normalize(NormalizeMatches::new(&Default::default(), &expected));
-    if let (DataInner::Json(exp), DataInner::Json(act)) = (expected.inner, actual.inner) {
-        assert_eq!(exp, act);
-    }
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_wildcard_array_middle_last() {
-    let exp = json!([
-        {
-            "name": "one",
-            "nickname": "1",
-        },
-        "{...}",
-        {
-            "name": "three",
-            "nickname": "3",
-        },
-        "{...}"
-    ]);
-    let expected = Data::json(exp);
-    let actual = json!([
-        {
-            "name": "one",
-            "nickname": "1",
-        },
-        {
-            "name": "two",
-            "nickname": "2",
-        },
-        {
-            "name": "three",
-            "nickname": "3",
-        },
-        {
-            "name": "four",
-            "nickname": "4",
-        },
-        {
-            "name": "five",
-            "nickname": "5",
-        }
-    ]);
-    let actual =
-        Data::json(actual).normalize(NormalizeMatches::new(&Default::default(), &expected));
-    if let (DataInner::Json(exp), DataInner::Json(act)) = (expected.inner, actual.inner) {
-        assert_eq!(exp, act);
-    }
-}
-
-#[test]
-#[cfg(feature = "json")]
-fn json_normalize_wildcard_array_middle_last_early_return() {
-    let exp = json!([
-        {
-            "name": "one",
-            "nickname": "1",
-        },
-        "{...}",
-        {
-            "name": "three",
-            "nickname": "3",
-        },
-        "{...}"
-    ]);
-    let expected = Data::json(exp);
-    let actual = json!([
-        {
-            "name": "one",
-            "nickname": "1",
-        },
-        {
-            "name": "two",
-            "nickname": "2",
-        },
-        {
-            "name": "four",
-            "nickname": "4",
-        },
-        {
-            "name": "five",
-            "nickname": "5",
-        }
-    ]);
-    let actual_normalized =
-        Data::json(actual.clone()).normalize(NormalizeMatches::new(&Default::default(), &expected));
-    if let DataInner::Json(act) = actual_normalized.inner {
-        assert_eq!(act, actual);
-    }
-}
-
 #[cfg(feature = "term-svg")]
-mod text_elem {
+mod term_svg_body {
     use super::super::*;
 
     #[test]
     fn empty() {
         let input = "";
         let expected = None;
-        let actual = text_elem(input);
+        let actual = term_svg_body(input);
         assert_eq!(expected, actual);
     }
 
@@ -579,7 +233,7 @@ mod text_elem {
 </text>
 world!";
         let expected = None;
-        let actual = text_elem(input);
+        let actual = term_svg_body(input);
         assert_eq!(expected, actual);
     }
 
@@ -590,7 +244,7 @@ Hello
 <text
 world!";
         let expected = None;
-        let actual = text_elem(input);
+        let actual = term_svg_body(input);
         assert_eq!(expected, actual);
     }
 
@@ -608,7 +262,7 @@ world
 </text>
 ",
         );
-        let actual = text_elem(input);
+        let actual = term_svg_body(input);
         assert_eq!(expected, actual);
     }
 
@@ -622,7 +276,7 @@ world";
             "<text>
 world",
         );
-        let actual = text_elem(input);
+        let actual = term_svg_body(input);
         assert_eq!(expected, actual);
     }
 }

@@ -3,6 +3,8 @@
 #[cfg(feature = "color")]
 use anstream::panic;
 
+use crate::IntoData;
+
 /// Process spawning for testing of non-interactive commands
 #[derive(Debug)]
 pub struct Command {
@@ -21,7 +23,7 @@ impl Command {
             stdin: None,
             timeout: None,
             _stderr_to_stdout: false,
-            config: crate::Assert::new().action_env(crate::DEFAULT_ACTION_ENV),
+            config: crate::Assert::new().action_env(crate::assert::DEFAULT_ACTION_ENV),
         }
     }
 
@@ -32,7 +34,7 @@ impl Command {
             stdin: None,
             timeout: None,
             _stderr_to_stdout: false,
-            config: crate::Assert::new().action_env(crate::DEFAULT_ACTION_ENV),
+            config: crate::Assert::new().action_env(crate::assert::DEFAULT_ACTION_ENV),
         }
     }
 
@@ -243,8 +245,8 @@ impl Command {
     ///     .assert()
     ///     .stdout_eq("42");
     /// ```
-    pub fn stdin(mut self, stream: impl Into<crate::Data>) -> Self {
-        self.stdin = Some(stream.into());
+    pub fn stdin(mut self, stream: impl IntoData) -> Self {
+        self.stdin = Some(stream.into_data());
         self
     }
 
@@ -288,6 +290,7 @@ impl Command {
     ///     .stdout_eq("42");
     /// ```
     #[track_caller]
+    #[must_use]
     pub fn assert(self) -> OutputAssert {
         let config = self.config.clone();
         match self.output() {
@@ -454,7 +457,7 @@ impl OutputAssert {
     pub fn new(output: std::process::Output) -> Self {
         Self {
             output,
-            config: crate::Assert::new().action_env(crate::DEFAULT_ACTION_ENV),
+            config: crate::Assert::new().action_env(crate::assert::DEFAULT_ACTION_ENV),
         }
     }
 
@@ -494,7 +497,7 @@ impl OutputAssert {
 
             use std::fmt::Write;
             let mut buf = String::new();
-            writeln!(&mut buf, "{}", desc).unwrap();
+            writeln!(&mut buf, "{desc}").unwrap();
             self.write_stdout(&mut buf).unwrap();
             self.write_stderr(&mut buf).unwrap();
             panic!("{}", buf);
@@ -524,7 +527,7 @@ impl OutputAssert {
 
             use std::fmt::Write;
             let mut buf = String::new();
-            writeln!(&mut buf, "{}", desc).unwrap();
+            writeln!(&mut buf, "{desc}").unwrap();
             self.write_stdout(&mut buf).unwrap();
             self.write_stderr(&mut buf).unwrap();
             panic!("{}", buf);
@@ -546,7 +549,7 @@ impl OutputAssert {
 
             use std::fmt::Write;
             let mut buf = String::new();
-            writeln!(&mut buf, "{}", desc).unwrap();
+            writeln!(&mut buf, "{desc}").unwrap();
             self.write_stdout(&mut buf).unwrap();
             self.write_stderr(&mut buf).unwrap();
             panic!("{}", buf);
@@ -578,7 +581,7 @@ impl OutputAssert {
 
             use std::fmt::Write;
             let mut buf = String::new();
-            writeln!(&mut buf, "{}", desc).unwrap();
+            writeln!(&mut buf, "{desc}").unwrap();
             self.write_stdout(&mut buf).unwrap();
             self.write_stderr(&mut buf).unwrap();
             panic!("{}", buf);
@@ -588,6 +591,19 @@ impl OutputAssert {
 
     /// Ensure the command wrote the expected data to `stdout`.
     ///
+    /// By default [`filters`][crate::filter] are applied, including:
+    /// - `...` is a line-wildcard when on a line by itself
+    /// - `[..]` is a character-wildcard when inside a line
+    /// - `[EXE]` matches `.exe` on Windows
+    /// - `"{...}"` is a JSON value wildcard
+    /// - `"...": "{...}"` is a JSON key-value wildcard
+    /// - `\` to `/`
+    /// - Newlines
+    ///
+    /// To limit this to newline normalization for text, call [`Data::raw`][crate::Data::raw] on `expected`.
+    ///
+    /// # Examples
+    ///
     /// ```rust,no_run
     /// use snapbox::cmd::Command;
     /// use snapbox::cmd::cargo_bin;
@@ -596,7 +612,7 @@ impl OutputAssert {
     ///     .env("stdout", "hello")
     ///     .env("stderr", "world")
     ///     .assert()
-    ///     .stdout_eq("hello");
+    ///     .stdout_eq("he[..]o");
     /// ```
     ///
     /// Can combine this with [`file!`][crate::file]
@@ -612,62 +628,42 @@ impl OutputAssert {
     ///     .stdout_eq(file!["stdout.log"]);
     /// ```
     #[track_caller]
-    pub fn stdout_eq(self, expected: impl Into<crate::Data>) -> Self {
-        let expected = expected.into();
+    pub fn stdout_eq(self, expected: impl IntoData) -> Self {
+        let expected = expected.into_data();
         self.stdout_eq_inner(expected)
     }
 
     #[track_caller]
+    #[deprecated(since = "0.6.0", note = "Replaced with `OutputAssert::stdout_eq`")]
+    pub fn stdout_eq_(self, expected: impl IntoData) -> Self {
+        self.stdout_eq(expected)
+    }
+
+    #[track_caller]
     fn stdout_eq_inner(self, expected: crate::Data) -> Self {
-        let actual = crate::Data::from(self.output.stdout.as_slice());
-        let (pattern, actual) = self.config.normalize_eq(expected, actual);
-        self.config.do_action(pattern, actual, Some(&"stdout"));
-
-        self
-    }
-
-    /// Ensure the command wrote the expected data to `stdout`.
-    ///
-    /// ```rust,no_run
-    /// use snapbox::cmd::Command;
-    /// use snapbox::cmd::cargo_bin;
-    ///
-    /// let assert = Command::new(cargo_bin("snap-fixture"))
-    ///     .env("stdout", "hello")
-    ///     .env("stderr", "world")
-    ///     .assert()
-    ///     .stdout_matches("he[..]o");
-    /// ```
-    ///
-    /// Can combine this with [`file!`][crate::file]
-    /// ```rust,no_run
-    /// use snapbox::cmd::Command;
-    /// use snapbox::cmd::cargo_bin;
-    /// use snapbox::file;
-    ///
-    /// let assert = Command::new(cargo_bin("snap-fixture"))
-    ///     .env("stdout", "hello")
-    ///     .env("stderr", "world")
-    ///     .assert()
-    ///     .stdout_matches(file!["stdout.log"]);
-    /// ```
-    #[track_caller]
-    pub fn stdout_matches(self, expected: impl Into<crate::Data>) -> Self {
-        let expected = expected.into();
-        self.stdout_matches_inner(expected)
-    }
-
-    #[track_caller]
-    fn stdout_matches_inner(self, expected: crate::Data) -> Self {
-        let actual = crate::Data::from(self.output.stdout.as_slice());
-        let (pattern, actual) = self.config.normalize_match(expected, actual);
-        self.config.do_action(pattern, actual, Some(&"stdout"));
+        let actual = self.output.stdout.as_slice().into_data();
+        if let Err(err) = self.config.try_eq(Some(&"stdout"), actual, expected) {
+            err.panic();
+        }
 
         self
     }
 
     /// Ensure the command wrote the expected data to `stderr`.
     ///
+    /// By default [`filters`][crate::filter] are applied, including:
+    /// - `...` is a line-wildcard when on a line by itself
+    /// - `[..]` is a character-wildcard when inside a line
+    /// - `[EXE]` matches `.exe` on Windows
+    /// - `"{...}"` is a JSON value wildcard
+    /// - `"...": "{...}"` is a JSON key-value wildcard
+    /// - `\` to `/`
+    /// - Newlines
+    ///
+    /// To limit this to newline normalization for text, call [`Data::raw`][crate::Data::raw] on `expected`.
+    ///
+    /// # Examples
+    ///
     /// ```rust,no_run
     /// use snapbox::cmd::Command;
     /// use snapbox::cmd::cargo_bin;
@@ -676,7 +672,7 @@ impl OutputAssert {
     ///     .env("stdout", "hello")
     ///     .env("stderr", "world")
     ///     .assert()
-    ///     .stderr_eq("world");
+    ///     .stderr_eq("wo[..]d");
     /// ```
     ///
     /// Can combine this with [`file!`][crate::file]
@@ -692,56 +688,23 @@ impl OutputAssert {
     ///     .stderr_eq(file!["stderr.log"]);
     /// ```
     #[track_caller]
-    pub fn stderr_eq(self, expected: impl Into<crate::Data>) -> Self {
-        let expected = expected.into();
+    pub fn stderr_eq(self, expected: impl IntoData) -> Self {
+        let expected = expected.into_data();
         self.stderr_eq_inner(expected)
     }
 
     #[track_caller]
+    #[deprecated(since = "0.6.0", note = "Replaced with `OutputAssert::stderr_eq`")]
+    pub fn stderr_eq_(self, expected: impl IntoData) -> Self {
+        self.stderr_eq(expected)
+    }
+
+    #[track_caller]
     fn stderr_eq_inner(self, expected: crate::Data) -> Self {
-        let actual = crate::Data::from(self.output.stderr.as_slice());
-        let (pattern, actual) = self.config.normalize_eq(expected, actual);
-        self.config.do_action(pattern, actual, Some(&"stderr"));
-
-        self
-    }
-
-    /// Ensure the command wrote the expected data to `stderr`.
-    ///
-    /// ```rust,no_run
-    /// use snapbox::cmd::Command;
-    /// use snapbox::cmd::cargo_bin;
-    ///
-    /// let assert = Command::new(cargo_bin("snap-fixture"))
-    ///     .env("stdout", "hello")
-    ///     .env("stderr", "world")
-    ///     .assert()
-    ///     .stderr_matches("wo[..]d");
-    /// ```
-    ///
-    /// Can combine this with [`file!`][crate::file]
-    /// ```rust,no_run
-    /// use snapbox::cmd::Command;
-    /// use snapbox::cmd::cargo_bin;
-    /// use snapbox::file;
-    ///
-    /// let assert = Command::new(cargo_bin("snap-fixture"))
-    ///     .env("stdout", "hello")
-    ///     .env("stderr", "world")
-    ///     .assert()
-    ///     .stderr_matches(file!["stderr.log"]);
-    /// ```
-    #[track_caller]
-    pub fn stderr_matches(self, expected: impl Into<crate::Data>) -> Self {
-        let expected = expected.into();
-        self.stderr_matches_inner(expected)
-    }
-
-    #[track_caller]
-    fn stderr_matches_inner(self, expected: crate::Data) -> Self {
-        let actual = crate::Data::from(self.output.stderr.as_slice());
-        let (pattern, actual) = self.config.normalize_match(expected, actual);
-        self.config.do_action(pattern, actual, Some(&"stderr"));
+        let actual = self.output.stderr.as_slice().into_data();
+        if let Err(err) = self.config.try_eq(Some(&"stderr"), actual, expected) {
+            err.panic();
+        }
 
         self
     }
@@ -778,7 +741,7 @@ pub fn display_exit_status(status: std::process::ExitStatus) -> String {
 pub fn display_exit_status(status: std::process::ExitStatus) -> String {
     #[cfg(unix)]
     fn detailed_exit_status(status: std::process::ExitStatus) -> Option<String> {
-        use std::os::unix::process::*;
+        use std::os::unix::process::ExitStatusExt;
 
         let signal = status.signal()?;
         let name = match signal as libc::c_int {
@@ -799,7 +762,7 @@ pub fn display_exit_status(status: std::process::ExitStatus) -> String {
             libc::SIGTRAP => ", SIGTRAP: trace/breakpoint trap",
             _ => "",
         };
-        Some(format!("signal: {}{}", signal, name))
+        Some(format!("signal: {signal}{name}"))
     }
 
     #[cfg(windows)]
@@ -883,15 +846,21 @@ fn wait(
     child.wait()
 }
 
-pub use snapbox_macros::cargo_bin;
+#[doc(inline)]
+pub use crate::cargo_bin;
 
 /// Look up the path to a cargo-built binary within an integration test.
 ///
 /// **NOTE:** Prefer [`cargo_bin!`] as this makes assumptions about cargo
+#[deprecated(
+    since = "0.6.23",
+    note = "incompatible with a custom cargo build-dir, see instead `cmd::cargo_bin!`"
+)]
 pub fn cargo_bin(name: &str) -> std::path::PathBuf {
-    let file_name = format!("{}{}", name, std::env::consts::EXE_SUFFIX);
-    let target_dir = target_dir();
-    target_dir.join(file_name)
+    let env_var = format!("CARGO_BIN_EXE_{name}");
+    std::env::var_os(env_var)
+        .map(|p| p.into())
+        .unwrap_or_else(|| target_dir().join(format!("{}{}", name, std::env::consts::EXE_SUFFIX)))
 }
 
 // Adapted from
@@ -929,7 +898,7 @@ pub(crate) mod examples {
     pub fn compile_example<'a>(
         target_name: &str,
         args: impl IntoIterator<Item = &'a str>,
-    ) -> Result<std::path::PathBuf, crate::Error> {
+    ) -> crate::assert::Result<std::path::PathBuf> {
         crate::debug!("Compiling example {}", target_name);
         let messages = escargot::CargoBuild::new()
             .current_target()
@@ -937,12 +906,12 @@ pub(crate) mod examples {
             .example(target_name)
             .args(args)
             .exec()
-            .map_err(|e| crate::Error::new(e.to_string()))?;
+            .map_err(|e| crate::assert::Error::new(e.to_string()))?;
         for message in messages {
-            let message = message.map_err(|e| crate::Error::new(e.to_string()))?;
+            let message = message.map_err(|e| crate::assert::Error::new(e.to_string()))?;
             let message = message
                 .decode()
-                .map_err(|e| crate::Error::new(e.to_string()))?;
+                .map_err(|e| crate::assert::Error::new(e.to_string()))?;
             crate::debug!("Message: {:?}", message);
             if let Some(bin) = decode_example_message(&message) {
                 let (name, bin) = bin?;
@@ -951,9 +920,8 @@ pub(crate) mod examples {
             }
         }
 
-        Err(crate::Error::new(format!(
-            "Unknown error building example {}",
-            target_name
+        Err(crate::assert::Error::new(format!(
+            "Unknown error building example {target_name}"
         )))
     }
 
@@ -971,9 +939,8 @@ pub(crate) mod examples {
     #[cfg(feature = "examples")]
     pub fn compile_examples<'a>(
         args: impl IntoIterator<Item = &'a str>,
-    ) -> Result<
-        impl Iterator<Item = (String, Result<std::path::PathBuf, crate::Error>)>,
-        crate::Error,
+    ) -> crate::assert::Result<
+        impl Iterator<Item = (String, crate::assert::Result<std::path::PathBuf>)>,
     > {
         crate::debug!("Compiling examples");
         let mut examples = std::collections::BTreeMap::new();
@@ -984,12 +951,12 @@ pub(crate) mod examples {
             .examples()
             .args(args)
             .exec()
-            .map_err(|e| crate::Error::new(e.to_string()))?;
+            .map_err(|e| crate::assert::Error::new(e.to_string()))?;
         for message in messages {
-            let message = message.map_err(|e| crate::Error::new(e.to_string()))?;
+            let message = message.map_err(|e| crate::assert::Error::new(e.to_string()))?;
             let message = message
                 .decode()
-                .map_err(|e| crate::Error::new(e.to_string()))?;
+                .map_err(|e| crate::assert::Error::new(e.to_string()))?;
             crate::debug!("Message: {:?}", message);
             if let Some(bin) = decode_example_message(&message) {
                 let (name, bin) = bin?;
@@ -1002,8 +969,8 @@ pub(crate) mod examples {
 
     #[allow(clippy::type_complexity)]
     fn decode_example_message<'m>(
-        message: &'m escargot::format::Message,
-    ) -> Option<Result<(&'m str, Result<std::path::PathBuf, crate::Error>), crate::Error>> {
+        message: &'m escargot::format::Message<'_>,
+    ) -> Option<crate::assert::Result<(&'m str, crate::assert::Result<std::path::PathBuf>)>> {
         match message {
             escargot::format::Message::CompilerMessage(msg) => {
                 let level = msg.message.level;
@@ -1017,10 +984,10 @@ pub(crate) mod examples {
                         .unwrap_or_else(|| msg.message.message.as_ref())
                         .to_owned();
                     if is_example_target(&msg.target) {
-                        let bin = Err(crate::Error::new(output));
+                        let bin = Err(crate::assert::Error::new(output));
                         Some(Ok((msg.target.name.as_ref(), bin)))
                     } else {
-                        Some(Err(crate::Error::new(output)))
+                        Some(Err(crate::assert::Error::new(output)))
                     }
                 } else {
                     None
@@ -1042,7 +1009,7 @@ pub(crate) mod examples {
         }
     }
 
-    fn is_example_target(target: &escargot::format::Target) -> bool {
+    fn is_example_target(target: &escargot::format::Target<'_>) -> bool {
         target.crate_types == ["bin"] && target.kind == ["example"]
     }
 }

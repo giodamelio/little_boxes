@@ -11,6 +11,7 @@ use crate::{
 /**
 A defined flags value that may be named or unnamed.
 */
+#[derive(Debug)]
 pub struct Flag<B> {
     name: &'static str,
     value: B,
@@ -151,6 +152,21 @@ pub trait Flags: Sized + 'static {
         Self::from_bits_retain(truncated)
     }
 
+    /// Get the known bits from a flags value.
+    fn known_bits(&self) -> Self::Bits {
+        self.bits() & Self::all().bits()
+    }
+
+    /// Get the unknown bits from a flags value.
+    fn unknown_bits(&self) -> Self::Bits {
+        self.bits() & !Self::all().bits()
+    }
+
+    /// This method will return `true` if any unknown bits are set.
+    fn contains_unknown_bits(&self) -> bool {
+        self.unknown_bits() != Self::Bits::EMPTY
+    }
+
     /// Get the underlying bits value.
     ///
     /// The returned value is exactly the bits set in this flags value.
@@ -212,6 +228,11 @@ pub trait Flags: Sized + 'static {
         iter::IterNames::new(self)
     }
 
+    /// Yield a set of all named flags defined by [`Self::FLAGS`].
+    fn iter_defined_names() -> iter::IterDefinedNames<Self> {
+        iter::IterDefinedNames::new()
+    }
+
     /// Whether all bits in this flags value are unset.
     fn is_empty(&self) -> bool {
         self.bits() == Self::Bits::EMPTY
@@ -224,7 +245,7 @@ pub trait Flags: Sized + 'static {
         Self::all().bits() | self.bits() == self.bits()
     }
 
-    /// Whether any set bits in a source flags value are also set in a target flags value.
+    /// Whether any set bits in `other` are also set in `self`.
     fn intersects(&self, other: Self) -> bool
     where
         Self: Sized,
@@ -232,7 +253,7 @@ pub trait Flags: Sized + 'static {
         self.bits() & other.bits() != Self::Bits::EMPTY
     }
 
-    /// Whether all set bits in a source flags value are also set in a target flags value.
+    /// Whether all set bits in `other` are also set in `self`.
     fn contains(&self, other: Self) -> bool
     where
         Self: Sized,
@@ -240,7 +261,15 @@ pub trait Flags: Sized + 'static {
         self.bits() & other.bits() == other.bits()
     }
 
-    /// The bitwise or (`|`) of the bits in two flags values.
+    /// Remove any unknown bits from the flags.
+    fn truncate(&mut self)
+    where
+        Self: Sized,
+    {
+        *self = Self::from_bits_truncate(self.bits());
+    }
+
+    /// The bitwise or (`|`) of the bits in `self` and `other`.
     fn insert(&mut self, other: Self)
     where
         Self: Sized,
@@ -248,7 +277,7 @@ pub trait Flags: Sized + 'static {
         *self = Self::from_bits_retain(self.bits()).union(other);
     }
 
-    /// The intersection of a source flags value with the complement of a target flags value (`&!`).
+    /// The intersection of `self` with the complement of `other` (`&!`).
     ///
     /// This method is not equivalent to `self & !other` when `other` has unknown bits set.
     /// `remove` won't truncate `other`, but the `!` operator will.
@@ -259,7 +288,7 @@ pub trait Flags: Sized + 'static {
         *self = Self::from_bits_retain(self.bits()).difference(other);
     }
 
-    /// The bitwise exclusive-or (`^`) of the bits in two flags values.
+    /// The bitwise exclusive-or (`^`) of the bits in `self` and `other`.
     fn toggle(&mut self, other: Self)
     where
         Self: Sized,
@@ -279,19 +308,27 @@ pub trait Flags: Sized + 'static {
         }
     }
 
-    /// The bitwise and (`&`) of the bits in two flags values.
+    /// Unsets all bits in the flags.
+    fn clear(&mut self)
+    where
+        Self: Sized,
+    {
+        *self = Self::empty();
+    }
+
+    /// The bitwise and (`&`) of the bits in `self` and `other`.
     #[must_use]
     fn intersection(self, other: Self) -> Self {
         Self::from_bits_retain(self.bits() & other.bits())
     }
 
-    /// The bitwise or (`|`) of the bits in two flags values.
+    /// The bitwise or (`|`) of the bits in `self` and `other`.
     #[must_use]
     fn union(self, other: Self) -> Self {
         Self::from_bits_retain(self.bits() | other.bits())
     }
 
-    /// The intersection of a source flags value with the complement of a target flags value (`&!`).
+    /// The intersection of `self` with the complement of `other` (`&!`).
     ///
     /// This method is not equivalent to `self & !other` when `other` has unknown bits set.
     /// `difference` won't truncate `other`, but the `!` operator will.
@@ -300,13 +337,13 @@ pub trait Flags: Sized + 'static {
         Self::from_bits_retain(self.bits() & !other.bits())
     }
 
-    /// The bitwise exclusive-or (`^`) of the bits in two flags values.
+    /// The bitwise exclusive-or (`^`) of the bits in `self` and `other`.
     #[must_use]
     fn symmetric_difference(self, other: Self) -> Self {
         Self::from_bits_retain(self.bits() ^ other.bits())
     }
 
-    /// The bitwise negation (`!`) of the bits in a flags value, truncating the result.
+    /// The bitwise negation (`!`) of the bits in `self`, truncating the result.
     #[must_use]
     fn complement(self) -> Self {
         Self::from_bits_truncate(!self.bits())

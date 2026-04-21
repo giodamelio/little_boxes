@@ -12,19 +12,19 @@ use std::{
     convert::From,
     error,
     fmt::{self, Debug, Display, Formatter},
-    io::{self},
+    io,
     result::Result as StdResult,
 };
 
 // Internal
+use crate::Command;
 use crate::builder::StyledStr;
 use crate::builder::Styles;
 use crate::output::fmt::Colorizer;
 use crate::output::fmt::Stream;
 use crate::parser::features::suggestions;
 use crate::util::FlatMap;
-use crate::util::{color::ColorChoice, safe_exit, SUCCESS_CODE, USAGE_CODE};
-use crate::Command;
+use crate::util::{SUCCESS_CODE, USAGE_CODE, color::ColorChoice};
 
 #[cfg(feature = "error-context")]
 mod context;
@@ -69,7 +69,7 @@ struct ErrorInner {
     context: FlatMap<ContextKind, ContextValue>,
     message: Option<Message>,
     source: Option<Box<dyn error::Error + Send + Sync>>,
-    help_flag: Option<&'static str>,
+    help_flag: Option<Cow<'static, str>>,
     styles: Styles,
     color_when: ColorChoice,
     color_help_when: ColorChoice,
@@ -85,7 +85,7 @@ impl<F: ErrorFormatter> Error<F> {
     /// Prefer [`Command::error`] for generating errors.
     ///
     /// [`Command::error`]: crate::Command::error
-    pub fn raw(kind: ErrorKind, message: impl std::fmt::Display) -> Self {
+    pub fn raw(kind: ErrorKind, message: impl Display) -> Self {
         Self::new(kind).set_message(message.to_string())
     }
 
@@ -195,10 +195,22 @@ impl<F: ErrorFormatter> Error<F> {
     }
 
     /// Insert a piece of context
+    ///
+    /// If this `ContextKind` is already present, its value is replaced and the old value is returned.
     #[inline(never)]
     #[cfg(feature = "error-context")]
     pub fn insert(&mut self, kind: ContextKind, value: ContextValue) -> Option<ContextValue> {
         self.inner.context.insert(kind, value)
+    }
+
+    /// Remove a piece of context, return the old value if any
+    ///
+    /// The context is currently implemented in a vector, so `remove` takes
+    /// linear time.
+    #[inline(never)]
+    #[cfg(feature = "error-context")]
+    pub fn remove(&mut self, kind: ContextKind) -> Option<ContextValue> {
+        self.inner.context.remove(&kind)
     }
 
     /// Should the message be written to `stdout` or not?
@@ -233,7 +245,7 @@ impl<F: ErrorFormatter> Error<F> {
     pub fn exit(&self) -> ! {
         // Swallow broken pipe errors
         let _ = self.print();
-        safe_exit(self.exit_code())
+        std::process::exit(self.exit_code());
     }
 
     /// Prints formatted and colored error to `stdout` or `stderr` according to its error kind
@@ -319,7 +331,7 @@ impl<F: ErrorFormatter> Error<F> {
         self
     }
 
-    pub(crate) fn set_help_flag(mut self, help_flag: Option<&'static str>) -> Self {
+    pub(crate) fn set_help_flag(mut self, help_flag: Option<Cow<'static, str>>) -> Self {
         self.inner.help_flag = help_flag;
         self
     }
@@ -455,7 +467,7 @@ impl<F: ErrorFormatter> Error<F> {
                 (ContextKind::InvalidValue, ContextValue::String(bad_val)),
                 (
                     ContextKind::ValidValue,
-                    ContextValue::Strings(good_vals.iter().map(|s| (*s).to_owned()).collect()),
+                    ContextValue::Strings(good_vals.iter().map(|s| (*s).clone()).collect()),
                 ),
             ]);
             if let Some(suggestion) = suggestion {
@@ -490,11 +502,7 @@ impl<F: ErrorFormatter> Error<F> {
                 let mut styled_suggestion = StyledStr::new();
                 let _ = write!(
                     styled_suggestion,
-                    "to pass '{}{subcmd}{}' as a value, use '{}{name} -- {subcmd}{}'",
-                    invalid.render(),
-                    invalid.render_reset(),
-                    valid.render(),
-                    valid.render_reset()
+                    "to pass '{invalid}{subcmd}{invalid:#}' as a value, use '{valid}{name} -- {subcmd}{valid:#}'",
                 );
                 suggestions.push(styled_suggestion);
             }
@@ -726,11 +734,7 @@ impl<F: ErrorFormatter> Error<F> {
                 let mut styled_suggestion = StyledStr::new();
                 let _ = write!(
                     styled_suggestion,
-                    "to pass '{}{arg}{}' as a value, use '{}-- {arg}{}'",
-                    invalid.render(),
-                    invalid.render_reset(),
-                    valid.render(),
-                    valid.render_reset()
+                    "to pass '{invalid}{arg}{invalid:#}' as a value, use '{valid}-- {arg}{valid:#}'",
                 );
                 suggestions.push(styled_suggestion);
             }
@@ -744,12 +748,7 @@ impl<F: ErrorFormatter> Error<F> {
             match did_you_mean {
                 Some((flag, Some(sub))) => {
                     let mut styled_suggestion = StyledStr::new();
-                    let _ = write!(
-                        styled_suggestion,
-                        "'{}{sub} {flag}{}' exists",
-                        valid.render(),
-                        valid.render_reset()
-                    );
+                    let _ = write!(styled_suggestion, "'{valid}{sub} {flag}{valid:#}' exists",);
                     suggestions.push(styled_suggestion);
                 }
                 Some((flag, None)) => {
@@ -787,11 +786,7 @@ impl<F: ErrorFormatter> Error<F> {
             let mut styled_suggestion = StyledStr::new();
             let _ = write!(
                 styled_suggestion,
-                "subcommand '{}{arg}{}' exists; to use it, remove the '{}--{}' before it",
-                valid.render(),
-                valid.render_reset(),
-                invalid.render(),
-                invalid.render_reset()
+                "subcommand '{valid}{arg}{valid:#}' exists; to use it, remove the '{invalid}--{invalid:#}' before it",
             );
 
             err = err.extend_context_unchecked([
@@ -832,8 +827,8 @@ impl<F: ErrorFormatter> From<fmt::Error> for Error<F> {
     }
 }
 
-impl<F: ErrorFormatter> std::fmt::Debug for Error<F> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+impl<F: ErrorFormatter> Debug for Error<F> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         self.inner.fmt(f)
     }
 }
@@ -846,7 +841,7 @@ impl<F: ErrorFormatter> error::Error for Error<F> {
 }
 
 impl<F: ErrorFormatter> Display for Error<F> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // Assuming `self.message` already has a trailing newline, from `try_help` or similar
         ok!(write!(f, "{}", self.formatted()));
         if let Some(backtrace) = self.inner.backtrace.as_ref() {
@@ -884,7 +879,7 @@ impl Message {
         }
     }
 
-    fn formatted(&self, styles: &Styles) -> Cow<StyledStr> {
+    fn formatted(&self, styles: &Styles) -> Cow<'_, StyledStr> {
         match self {
             Message::Raw(s) => {
                 let styled = format::format_error_message(s, styles, None, None);
@@ -921,7 +916,7 @@ impl Backtrace {
 
 #[cfg(feature = "debug")]
 impl Display for Backtrace {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // `backtrace::Backtrace` uses `Debug` instead of `Display`
         write!(f, "{:?}", self.0)
     }
@@ -940,7 +935,7 @@ impl Backtrace {
 
 #[cfg(not(feature = "debug"))]
 impl Display for Backtrace {
-    fn fmt(&self, _: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, _: &mut Formatter<'_>) -> fmt::Result {
         Ok(())
     }
 }

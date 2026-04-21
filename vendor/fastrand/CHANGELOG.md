@@ -1,3 +1,39 @@
+# Version 2.4.1
+
+- Fix build failure with `js` feature. (#125)
+
+# Version 2.4.0
+
+- Bump MSRV to 1.63. (#104)
+- Improve quality of f32/f64 generation. (#103)
+- Add `f{32,64}_inclusive` and `Rng::f{32,64}_inclusive`. (#103)
+- Make `Rng::with_seed` const. (#107)
+- Update `getrandom` to 0.3. (#104)
+
+# Version 2.3.0
+
+- Accept `IntoIterator` in `choose_multiple` functions instead of just `Iterator`. (#92)
+
+# Version 2.2.0
+
+- Expose missing `fill` method for the global RNG. (#90)
+
+# Version 2.1.1
+
+- Remove support for 128-bit targets, as they are not supported by rustc yet. (#87)
+
+# Version 2.1.0
+
+- Change the RNG algorithm and the way that the seed is computed. This will cause
+  the algorithm to emit different constants for different seeds, hence the minor
+  SemVer change.
+  - Update to the final WyRand v4.2 constants for better entropy. (#82)
+  - Remove an unnecessary seed modification. (#73)
+
+# Version 2.0.2
+
+- Slight restructuring of the `with_seed` function. (#79)
+
 # Version 2.0.1
 
 - Clarify documentation for the `fork()` method. (#62)

@@ -2,7 +2,7 @@
 //!
 //! [`OneShot`] is the top-level item in the `cmd.toml` files.
 
-use snapbox::data::{NormalizeNewlines, NormalizePaths};
+use snapbox::filter::{Filter as _, FilterNewlines, FilterPaths};
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
 
@@ -40,9 +40,10 @@ impl TryCmd {
                     let stdout_path = path.with_extension("stdout");
                     let stdout = if stdout_path.exists() {
                         Some(
-                            crate::Data::read_from(&stdout_path, Some(is_binary))
-                                .normalize(NormalizePaths)
-                                .normalize(NormalizeNewlines),
+                            FilterNewlines.filter(
+                                FilterPaths
+                                    .filter(crate::Data::read_from(&stdout_path, Some(is_binary))),
+                            ),
                         )
                     } else {
                         None
@@ -54,9 +55,10 @@ impl TryCmd {
                     let stderr_path = path.with_extension("stderr");
                     let stderr = if stderr_path.exists() {
                         Some(
-                            crate::Data::read_from(&stderr_path, Some(is_binary))
-                                .normalize(NormalizePaths)
-                                .normalize(NormalizeNewlines),
+                            FilterNewlines.filter(
+                                FilterPaths
+                                    .filter(crate::Data::read_from(&stderr_path, Some(is_binary))),
+                            ),
                         )
                     } else {
                         None
@@ -68,7 +70,7 @@ impl TryCmd {
             } else if ext == std::ffi::OsStr::new("trycmd") || ext == std::ffi::OsStr::new("md") {
                 let raw = std::fs::read_to_string(path)
                     .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-                let normalized = snapbox::utils::normalize_lines(&raw);
+                let normalized = snapbox::filter::normalize_lines(&raw);
                 Self::parse_trycmd(&normalized)?
             } else {
                 return Err(format!("Unsupported extension: {}", ext.to_string_lossy()).into());
@@ -93,11 +95,11 @@ impl TryCmd {
             if base_path.exists() {
                 sequence.fs.base = Some(base_path);
             } else if sequence.fs.cwd.is_some() {
-                sequence.fs.base = sequence.fs.cwd.clone();
+                sequence.fs.base.clone_from(&sequence.fs.cwd);
             }
         }
         if sequence.fs.cwd.is_none() {
-            sequence.fs.cwd = sequence.fs.base.clone();
+            sequence.fs.cwd.clone_from(&sequence.fs.base);
         }
         if sequence.fs.sandbox.is_none() {
             sequence.fs.sandbox = Some(path.with_extension("out").exists());
@@ -107,13 +109,13 @@ impl TryCmd {
             .fs
             .base
             .take()
-            .map(|p| snapbox::path::resolve_dir(p).map_err(|e| e.to_string()))
+            .map(|p| snapbox::dir::resolve_dir(p).map_err(|e| e.to_string()))
             .transpose()?;
         sequence.fs.cwd = sequence
             .fs
             .cwd
             .take()
-            .map(|p| snapbox::path::resolve_dir(p).map_err(|e| e.to_string()))
+            .map(|p| snapbox::dir::resolve_dir(p).map_err(|e| e.to_string()))
             .transpose()?;
 
         Ok(sequence)
@@ -144,7 +146,7 @@ impl TryCmd {
                 }
             } else if ext == std::ffi::OsStr::new("trycmd") || ext == std::ffi::OsStr::new("md") {
                 if stderr.is_some() && stderr != Some(&crate::Data::new()) {
-                    panic!("stderr should have been merged: {:?}", stderr);
+                    panic!("stderr should have been merged: {stderr:?}");
                 }
                 if let (Some(id), Some(stdout)) = (id, stdout) {
                     let step = self
@@ -159,7 +161,7 @@ impl TryCmd {
 
                     let raw = std::fs::read_to_string(path)
                         .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-                    let mut normalized = snapbox::utils::normalize_lines(&raw);
+                    let mut normalized = snapbox::filter::normalize_lines(&raw);
 
                     overwrite_trycmd_status(exit, step, &mut line_nums, &mut normalized)?;
 
@@ -196,7 +198,7 @@ impl TryCmd {
                     .find_map(|(i, c)| (c != '`').then_some(i))
                     .unwrap_or(line.len());
                 if 3 <= tick_end {
-                    fence_pattern = line[..tick_end].to_owned();
+                    line[..tick_end].clone_into(&mut fence_pattern);
                     let raw = line[tick_end..].trim();
                     if raw.is_empty() {
                         // Assuming a trycmd block
@@ -243,9 +245,7 @@ impl TryCmd {
                         cmd_start = line_num;
                         stdout_start = line_num + 1;
                     } else {
-                        return Err(
-                            format!("Expected `$` on line {}, got `{}`", line_num, line).into()
-                        );
+                        return Err(format!("Expected `$` on line {line_num}, got `{line}`").into());
                     }
                 } else {
                     break 'outer;
@@ -294,7 +294,7 @@ impl TryCmd {
 
                 let bin = loop {
                     if cmdline.is_empty() {
-                        return Err(format!("No bin specified on line {}", cmd_start).into());
+                        return Err(format!("No bin specified on line {cmd_start}").into());
                     }
                     let next = cmdline.remove(0);
                     if let Some((key, value)) = next.split_once('=') {
@@ -341,13 +341,14 @@ fn overwrite_toml_output(
     output_field: &str,
 ) -> Result<(), crate::Error> {
     if let Some(output) = output {
-        if let Some(source) = output.source() {
-            output.write_to(source)?;
+        let output_path = path.with_extension(output_ext);
+        if output_path.exists() {
+            output.write_to_path(&output_path)?;
         } else if let Some(output) = output.render() {
             let raw = std::fs::read_to_string(path)
                 .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
             let mut doc = raw
-                .parse::<toml_edit::Document>()
+                .parse::<toml_edit::DocumentMut>()
                 .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
             if let Some(output_value) = doc.get_mut(output_field) {
                 *output_value = toml_edit::value(output);
@@ -355,13 +356,12 @@ fn overwrite_toml_output(
             std::fs::write(path, doc.to_string())
                 .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
         } else {
-            let output_path = path.with_extension(output_ext);
             output.write_to_path(&output_path)?;
 
             let raw = std::fs::read_to_string(path)
                 .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
             let mut doc = raw
-                .parse::<toml_edit::Document>()
+                .parse::<toml_edit::DocumentMut>()
                 .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
             doc[output_field] = toml_edit::Item::None;
             std::fs::write(path, doc.to_string())
@@ -376,7 +376,7 @@ fn overwrite_toml_status(
     status: std::process::ExitStatus,
     raw: String,
 ) -> Result<String, toml_edit::TomlError> {
-    let mut doc = raw.parse::<toml_edit::Document>()?;
+    let mut doc = raw.parse::<toml_edit::DocumentMut>()?;
     if let Some(code) = status.code() {
         if status.success() {
             match doc.get("status") {
@@ -444,7 +444,7 @@ fn overwrite_trycmd_status(
     step: &Step,
     stdout_line_nums: &mut std::ops::Range<usize>,
     normalized: &mut String,
-) -> Result<(), snapbox::Error> {
+) -> Result<(), crate::Error> {
     let status = match exit {
         Some(status) => status,
         _ => {
@@ -591,7 +591,7 @@ impl Step {
     ) -> Result<snapbox::cmd::Command, crate::Error> {
         let bin = match &self.bin {
             Some(Bin::Path(path)) => Ok(path.clone()),
-            Some(Bin::Name(name)) => Err(format!("Unknown bin.name = {}", name).into()),
+            Some(Bin::Name(name)) => Err(format!("Unknown bin.name = {name}").into()),
             Some(Bin::Ignore) => Err("Internal error: tried to run an ignored bin".into()),
             Some(Bin::Error(err)) => Err(err.clone()),
             None => Err("No bin specified".into()),
@@ -611,7 +611,7 @@ impl Step {
             cmd = cmd.stderr_to_stdout();
         }
         if let Some(timeout) = self.timeout {
-            cmd = cmd.timeout(timeout)
+            cmd = cmd.timeout(timeout);
         }
         cmd = self.env.apply(cmd);
 
@@ -893,7 +893,7 @@ impl std::str::FromStr for CommandStatus {
             _ => s
                 .parse::<i32>()
                 .map(Self::Code)
-                .map_err(|_| crate::Error::new(format!("Expected an exit code, got {}", s))),
+                .map_err(|_| crate::Error::new(format!("Expected an exit code, got {s}"))),
         }
     }
 }

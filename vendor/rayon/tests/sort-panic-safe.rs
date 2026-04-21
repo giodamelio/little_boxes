@@ -1,19 +1,18 @@
-use rand::distributions::Uniform;
-use rand::{thread_rng, Rng};
+use rand::distr::Uniform;
+use rand::{rng, Rng};
 use rayon::prelude::*;
 use std::cell::Cell;
-use std::cmp::{self, Ordering};
+use std::cmp::Ordering;
 use std::panic;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
 use std::thread;
 
-const ZERO: AtomicUsize = AtomicUsize::new(0);
 const LEN: usize = 20_000;
 
-static VERSIONS: AtomicUsize = ZERO;
+static VERSIONS: AtomicUsize = AtomicUsize::new(0);
 
-static DROP_COUNTS: [AtomicUsize; LEN] = [ZERO; LEN];
+static DROP_COUNTS: [AtomicUsize; LEN] = [const { AtomicUsize::new(0) }; LEN];
 
 #[derive(Clone, Eq)]
 struct DropCounter {
@@ -28,6 +27,7 @@ impl PartialEq for DropCounter {
     }
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for DropCounter {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.version.set(self.version.get() + 1);
@@ -66,7 +66,7 @@ macro_rules! test {
         let step = if len <= 100 {
             1
         } else {
-            cmp::max(1, panic_countdown / 10)
+            Ord::max(1, panic_countdown / 10)
         };
 
         // ... and then panic after each `step` comparisons.
@@ -83,7 +83,7 @@ macro_rules! test {
                 let panic_countdown = AtomicUsize::new(panic_countdown);
                 v.$func(|a, b| {
                     if panic_countdown.fetch_sub(1, Relaxed) == 1 {
-                        SILENCE_PANIC.with(|s| s.set(true));
+                        SILENCE_PANIC.set(true);
                         panic!();
                     }
                     a.cmp(b)
@@ -115,26 +115,26 @@ macro_rules! test {
     };
 }
 
-thread_local!(static SILENCE_PANIC: Cell<bool> = Cell::new(false));
+thread_local!(static SILENCE_PANIC: Cell<bool> = const { Cell::new(false) });
 
 #[test]
 #[cfg_attr(any(target_os = "emscripten", target_family = "wasm"), ignore)]
 fn sort_panic_safe() {
     let prev = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
-        if !SILENCE_PANIC.with(Cell::get) {
+        if !SILENCE_PANIC.get() {
             prev(info);
         }
     }));
 
     for &len in &[1, 2, 3, 4, 5, 10, 20, 100, 500, 5_000, 20_000] {
-        let len_dist = Uniform::new(0, len);
+        let len_dist = Uniform::new(0, len).unwrap();
         for &modulus in &[5, 30, 1_000, 20_000] {
             for &has_runs in &[false, true] {
-                let mut rng = thread_rng();
+                let mut rng = rng();
                 let mut input = (0..len)
                     .map(|id| DropCounter {
-                        x: rng.gen_range(0..modulus),
+                        x: rng.random_range(0..modulus),
                         id,
                         version: Cell::new(0),
                     })
@@ -146,8 +146,8 @@ fn sort_panic_safe() {
                     }
 
                     for _ in 0..5 {
-                        let a = rng.sample(&len_dist);
-                        let b = rng.sample(&len_dist);
+                        let a = rng.sample(len_dist);
+                        let b = rng.sample(len_dist);
                         if a < b {
                             input[a..b].reverse();
                         } else {

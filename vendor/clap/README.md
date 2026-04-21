@@ -12,6 +12,12 @@
 
 Dual-licensed under [Apache 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT).
 
+## Get Started
+
+```console
+$ cargo add clap
+```
+
 ## About
 
 Create your command-line parser, with all of the bells and whistles, declaratively or procedurally.
@@ -25,19 +31,19 @@ For more details, see:
 <!-- omit in TOC -->
 ### Gold
 
-[![](https://opencollective.com/clap/tiers/gold.svg?avatarHeight=36&width=600)](https://opencollective.com/clap)
+[![](https://opencollective.com/clap/tiers/gold.svg?width=890)](https://opencollective.com/clap)
 
 <!-- omit in TOC -->
 ### Silver
 
-[![](https://opencollective.com/clap/tiers/silver.svg?avatarHeight=36&width=600)](https://opencollective.com/clap)
+[![](https://opencollective.com/clap/tiers/silver.svg?width=890)](https://opencollective.com/clap)
 
 <!-- omit in TOC -->
 ### Bronze
 
-[![](https://opencollective.com/clap/tiers/bronze.svg?avatarHeight=36&width=600)](https://opencollective.com/clap)
+[![](https://opencollective.com/clap/tiers/bronze.svg?width=890)](https://opencollective.com/clap)
 
 <!-- omit in TOC -->
 ### Backer
 
-[![](https://opencollective.com/clap/tiers/backer.svg?avatarHeight=36&width=600)](https://opencollective.com/clap)
+[![](https://opencollective.com/clap/tiers/backer.svg?width=890)](https://opencollective.com/clap)

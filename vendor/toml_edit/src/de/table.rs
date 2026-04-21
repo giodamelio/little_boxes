@@ -1,4 +1,4 @@
-use serde::de::IntoDeserializer;
+use serde_core::de::IntoDeserializer;
 
 use crate::de::Error;
 
@@ -7,23 +7,30 @@ pub(crate) struct TableDeserializer {
     items: crate::table::KeyValuePairs,
 }
 
-// Note: this is wrapped by `Deserializer` and `ValueDeserializer` and any trait methods
-// implemented here need to be wrapped there
-impl<'de> serde::Deserializer<'de> for TableDeserializer {
+impl TableDeserializer {
+    pub(crate) fn new(
+        items: crate::table::KeyValuePairs,
+        span: Option<std::ops::Range<usize>>,
+    ) -> Self {
+        Self { span, items }
+    }
+}
+
+impl<'de> serde_core::Deserializer<'de> for TableDeserializer {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
-        V: serde::de::Visitor<'de>,
+        V: serde_core::de::Visitor<'de>,
     {
-        visitor.visit_map(crate::de::TableMapAccess::new(self))
+        visitor.visit_map(TableMapAccess::new(self))
     }
 
     // `None` is interpreted as a missing field so be sure to implement `Some`
     // as a present field.
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Error>
     where
-        V: serde::de::Visitor<'de>,
+        V: serde_core::de::Visitor<'de>,
     {
         visitor.visit_some(self)
     }
@@ -34,7 +41,7 @@ impl<'de> serde::Deserializer<'de> for TableDeserializer {
         visitor: V,
     ) -> Result<V::Value, Error>
     where
-        V: serde::de::Visitor<'de>,
+        V: serde_core::de::Visitor<'de>,
     {
         visitor.visit_newtype_struct(self)
     }
@@ -42,15 +49,19 @@ impl<'de> serde::Deserializer<'de> for TableDeserializer {
     fn deserialize_struct<V>(
         self,
         name: &'static str,
-        fields: &'static [&'static str],
+        _fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Error>
     where
-        V: serde::de::Visitor<'de>,
+        V: serde_core::de::Visitor<'de>,
     {
-        if serde_spanned::__unstable::is_spanned(name, fields) {
+        if serde_spanned::de::is_spanned(name) {
             if let Some(span) = self.span.clone() {
-                return visitor.visit_map(super::SpannedDeserializer::new(self, span));
+                return visitor.visit_map(
+                    serde_spanned::de::SpannedDeserializer::<Self, Error>::new(self, span),
+                );
+            } else {
+                return Err(Error::custom("value is missing a span", None));
             }
         }
 
@@ -65,58 +76,40 @@ impl<'de> serde::Deserializer<'de> for TableDeserializer {
         visitor: V,
     ) -> Result<V::Value, Error>
     where
-        V: serde::de::Visitor<'de>,
+        V: serde_core::de::Visitor<'de>,
     {
         if self.items.is_empty() {
-            Err(crate::de::Error::custom(
+            Err(Error::custom(
                 "wanted exactly 1 element, found 0 elements",
                 self.span,
             ))
         } else if self.items.len() != 1 {
-            Err(crate::de::Error::custom(
+            Err(Error::custom(
                 "wanted exactly 1 element, more than 1 element",
                 self.span,
             ))
         } else {
-            visitor.visit_enum(crate::de::TableMapAccess::new(self))
+            visitor.visit_enum(TableMapAccess::new(self))
         }
     }
 
-    serde::forward_to_deserialize_any! {
+    serde_core::forward_to_deserialize_any! {
         bool u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 char str string seq
         bytes byte_buf map unit
         ignored_any unit_struct tuple_struct tuple identifier
     }
 }
 
-impl<'de> serde::de::IntoDeserializer<'de, crate::de::Error> for TableDeserializer {
-    type Deserializer = TableDeserializer;
+impl IntoDeserializer<'_, Error> for TableDeserializer {
+    type Deserializer = Self;
 
     fn into_deserializer(self) -> Self::Deserializer {
         self
     }
 }
 
-impl crate::Table {
-    pub(crate) fn into_deserializer(self) -> TableDeserializer {
-        TableDeserializer {
-            span: self.span(),
-            items: self.items,
-        }
-    }
-}
-
-impl crate::InlineTable {
-    pub(crate) fn into_deserializer(self) -> TableDeserializer {
-        TableDeserializer {
-            span: self.span(),
-            items: self.items,
-        }
-    }
-}
-
 pub(crate) struct TableMapAccess {
-    iter: indexmap::map::IntoIter<crate::InternalString, crate::table::TableKeyValue>,
+    iter: indexmap::map::IntoIter<crate::Key, crate::Item>,
     span: Option<std::ops::Range<usize>>,
     value: Option<(crate::Key, crate::Item)>,
 }
@@ -131,25 +124,26 @@ impl TableMapAccess {
     }
 }
 
-impl<'de> serde::de::MapAccess<'de> for TableMapAccess {
+impl<'de> serde_core::de::MapAccess<'de> for TableMapAccess {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
-        K: serde::de::DeserializeSeed<'de>,
+        K: serde_core::de::DeserializeSeed<'de>,
     {
         match self.iter.next() {
             Some((k, v)) => {
+                let key_span = k.span();
                 let ret = seed
-                    .deserialize(super::KeyDeserializer::new(k, v.key.span()))
+                    .deserialize(super::KeyDeserializer::new(k.clone(), key_span.clone()))
                     .map(Some)
                     .map_err(|mut e: Self::Error| {
                         if e.span().is_none() {
-                            e.set_span(v.key.span());
+                            e.set_span(key_span);
                         }
                         e
                     });
-                self.value = Some((v.key, v.value));
+                self.value = Some((k, v));
                 ret
             }
             None => Ok(None),
@@ -158,7 +152,7 @@ impl<'de> serde::de::MapAccess<'de> for TableMapAccess {
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
-        V: serde::de::DeserializeSeed<'de>,
+        V: serde_core::de::DeserializeSeed<'de>,
     {
         match self.value.take() {
             Some((k, v)) => {
@@ -179,13 +173,13 @@ impl<'de> serde::de::MapAccess<'de> for TableMapAccess {
     }
 }
 
-impl<'de> serde::de::EnumAccess<'de> for TableMapAccess {
+impl<'de> serde_core::de::EnumAccess<'de> for TableMapAccess {
     type Error = Error;
     type Variant = super::TableEnumDeserializer;
 
     fn variant_seed<V>(mut self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
     where
-        V: serde::de::DeserializeSeed<'de>,
+        V: serde_core::de::DeserializeSeed<'de>,
     {
         let (key, value) = match self.iter.next() {
             Some(pair) => pair,
@@ -201,12 +195,12 @@ impl<'de> serde::de::EnumAccess<'de> for TableMapAccess {
             .deserialize(key.into_deserializer())
             .map_err(|mut e: Self::Error| {
                 if e.span().is_none() {
-                    e.set_span(value.key.span());
+                    e.set_span(key.span());
                 }
                 e
             })?;
 
-        let variant = super::TableEnumDeserializer::new(value.value);
+        let variant = super::TableEnumDeserializer::new(value);
 
         Ok((val, variant))
     }

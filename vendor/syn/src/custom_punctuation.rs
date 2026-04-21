@@ -30,6 +30,7 @@
 /// # Example
 ///
 /// ```
+/// use core::iter;
 /// use proc_macro2::{TokenStream, TokenTree};
 /// use syn::parse::{Parse, ParseStream, Peek, Result};
 /// use syn::punctuated::Punctuated;
@@ -64,7 +65,7 @@
 ///     let mut tokens = TokenStream::new();
 ///     while !input.is_empty() && !input.peek(end) {
 ///         let next: TokenTree = input.parse()?;
-///         tokens.extend(Some(next));
+///         tokens.extend(iter::once(next));
 ///     }
 ///     Ok(tokens)
 /// }
@@ -78,6 +79,7 @@
 macro_rules! custom_punctuation {
     ($ident:ident, $($tt:tt)+) => {
         pub struct $ident {
+            #[allow(dead_code)]
             pub spans: $crate::custom_punctuation_repr!($($tt)+),
         }
 
@@ -236,50 +238,51 @@ macro_rules! custom_punctuation_repr {
 #[macro_export]
 #[rustfmt::skip]
 macro_rules! custom_punctuation_len {
-    ($mode:ident, +)     => { 1 };
-    ($mode:ident, +=)    => { 2 };
     ($mode:ident, &)     => { 1 };
     ($mode:ident, &&)    => { 2 };
     ($mode:ident, &=)    => { 2 };
     ($mode:ident, @)     => { 1 };
-    ($mode:ident, !)     => { 1 };
     ($mode:ident, ^)     => { 1 };
     ($mode:ident, ^=)    => { 2 };
     ($mode:ident, :)     => { 1 };
-    ($mode:ident, ::)    => { 2 };
     ($mode:ident, ,)     => { 1 };
-    ($mode:ident, /)     => { 1 };
-    ($mode:ident, /=)    => { 2 };
+    ($mode:ident, $)     => { 1 };
     ($mode:ident, .)     => { 1 };
     ($mode:ident, ..)    => { 2 };
     ($mode:ident, ...)   => { 3 };
     ($mode:ident, ..=)   => { 3 };
     ($mode:ident, =)     => { 1 };
     ($mode:ident, ==)    => { 2 };
+    ($mode:ident, =>)    => { 2 };
     ($mode:ident, >=)    => { 2 };
     ($mode:ident, >)     => { 1 };
+    ($mode:ident, <-)    => { 2 };
     ($mode:ident, <=)    => { 2 };
     ($mode:ident, <)     => { 1 };
-    ($mode:ident, *=)    => { 2 };
+    ($mode:ident, -)     => { 1 };
+    ($mode:ident, -=)    => { 2 };
     ($mode:ident, !=)    => { 2 };
+    ($mode:ident, !)     => { 1 };
     ($mode:ident, |)     => { 1 };
     ($mode:ident, |=)    => { 2 };
     ($mode:ident, ||)    => { 2 };
+    ($mode:ident, ::)    => { 2 };
+    ($mode:ident, %)     => { 1 };
+    ($mode:ident, %=)    => { 2 };
+    ($mode:ident, +)     => { 1 };
+    ($mode:ident, +=)    => { 2 };
     ($mode:ident, #)     => { 1 };
     ($mode:ident, ?)     => { 1 };
     ($mode:ident, ->)    => { 2 };
-    ($mode:ident, <-)    => { 2 };
-    ($mode:ident, %)     => { 1 };
-    ($mode:ident, %=)    => { 2 };
-    ($mode:ident, =>)    => { 2 };
     ($mode:ident, ;)     => { 1 };
     ($mode:ident, <<)    => { 2 };
     ($mode:ident, <<=)   => { 3 };
     ($mode:ident, >>)    => { 2 };
     ($mode:ident, >>=)   => { 3 };
+    ($mode:ident, /)     => { 1 };
+    ($mode:ident, /=)    => { 2 };
     ($mode:ident, *)     => { 1 };
-    ($mode:ident, -)     => { 1 };
-    ($mode:ident, -=)    => { 2 };
+    ($mode:ident, *=)    => { 2 };
     ($mode:ident, ~)     => { 1 };
     (lenient, $tt:tt)    => { 0 };
     (strict, $tt:tt)     => {{ $crate::custom_punctuation_unexpected!($tt); 0 }};

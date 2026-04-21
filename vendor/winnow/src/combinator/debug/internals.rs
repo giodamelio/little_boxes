@@ -2,22 +2,21 @@
 
 use std::io::Write;
 
-use crate::error::ErrMode;
+use crate::error::ParserError;
 use crate::stream::Stream;
-use crate::*;
+use crate::{Parser, Result};
 
-pub struct Trace<P, D, I, O, E>
+pub(crate) struct Trace<P, D, I, O, E>
 where
     P: Parser<I, O, E>,
     I: Stream,
     D: std::fmt::Display,
+    E: ParserError<I>,
 {
     parser: P,
     name: D,
     call_count: usize,
-    i: core::marker::PhantomData<I>,
-    o: core::marker::PhantomData<O>,
-    e: core::marker::PhantomData<E>,
+    marker: core::marker::PhantomData<(I, O, E)>,
 }
 
 impl<P, D, I, O, E> Trace<P, D, I, O, E>
@@ -25,16 +24,15 @@ where
     P: Parser<I, O, E>,
     I: Stream,
     D: std::fmt::Display,
+    E: ParserError<I>,
 {
     #[inline(always)]
-    pub fn new(parser: P, name: D) -> Self {
+    pub(crate) fn new(parser: P, name: D) -> Self {
         Self {
             parser,
             name,
             call_count: 0,
-            i: Default::default(),
-            o: Default::default(),
-            e: Default::default(),
+            marker: Default::default(),
         }
     }
 }
@@ -44,9 +42,10 @@ where
     P: Parser<I, O, E>,
     I: Stream,
     D: std::fmt::Display,
+    E: ParserError<I>,
 {
     #[inline]
-    fn parse_next(&mut self, i: &mut I) -> PResult<O, E> {
+    fn parse_next(&mut self, i: &mut I) -> Result<O, E> {
         let depth = Depth::new();
         let original = i.checkpoint();
         start(*depth, &self.name, self.call_count, i);
@@ -62,19 +61,19 @@ where
     }
 }
 
-pub struct Depth {
+pub(crate) struct Depth {
     depth: usize,
     inc: bool,
 }
 
 impl Depth {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let depth = DEPTH.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let inc = true;
         Self { depth, inc }
     }
 
-    pub fn existing() -> Self {
+    pub(crate) fn existing() -> Self {
         let depth = DEPTH.load(std::sync::atomic::Ordering::SeqCst);
         let inc = false;
         Self { depth, inc }
@@ -96,7 +95,7 @@ impl AsRef<usize> for Depth {
     }
 }
 
-impl crate::lib::std::ops::Deref for Depth {
+impl core::ops::Deref for Depth {
     type Target = usize;
 
     #[inline(always)]
@@ -107,7 +106,7 @@ impl crate::lib::std::ops::Deref for Depth {
 
 static DEPTH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-pub enum Severity {
+pub(crate) enum Severity {
     Success,
     Backtrack,
     Cut,
@@ -115,19 +114,19 @@ pub enum Severity {
 }
 
 impl Severity {
-    pub fn with_result<T, E>(result: &Result<T, ErrMode<E>>) -> Self {
+    pub(crate) fn with_result<T, I: Stream, E: ParserError<I>>(result: &Result<T, E>) -> Self {
         match result {
             Ok(_) => Self::Success,
-            Err(ErrMode::Backtrack(_)) => Self::Backtrack,
-            Err(ErrMode::Cut(_)) => Self::Cut,
-            Err(ErrMode::Incomplete(_)) => Self::Incomplete,
+            Err(e) if e.is_backtrack() => Self::Backtrack,
+            Err(e) if e.is_incomplete() => Self::Incomplete,
+            _ => Self::Cut,
         }
     }
 }
 
-pub fn start<I: Stream>(
+pub(crate) fn start<I: Stream>(
     depth: usize,
-    name: &dyn crate::lib::std::fmt::Display,
+    name: &dyn core::fmt::Display,
     count: usize,
     input: &I,
 ) {
@@ -146,7 +145,7 @@ pub fn start<I: Stream>(
 
     // The debug version of `slice` might be wider, either due to rendering one byte as two nibbles or
     // escaping in strings.
-    let mut debug_slice = format!("{:#?}", input.raw());
+    let mut debug_slice = format!("{:?}", crate::util::from_fn(|f| input.trace(f)));
     let (debug_slice, eof) = if let Some(debug_offset) = debug_slice
         .char_indices()
         .enumerate()
@@ -178,9 +177,9 @@ pub fn start<I: Stream>(
     );
 }
 
-pub fn end(
+pub(crate) fn end(
     depth: usize,
-    name: &dyn crate::lib::std::fmt::Display,
+    name: &dyn core::fmt::Display,
     count: usize,
     consumed: usize,
     severity: Severity,
@@ -199,7 +198,7 @@ pub fn end(
     let (status_style, status) = match severity {
         Severity::Success => {
             let style = anstyle::Style::new().fg_color(Some(anstyle::AnsiColor::Green.into()));
-            let status = format!("+{}", consumed);
+            let status = format!("+{consumed}");
             (style, status)
         }
         Severity::Backtrack => (
@@ -228,7 +227,7 @@ pub fn end(
     );
 }
 
-pub fn result(depth: usize, name: &dyn crate::lib::std::fmt::Display, severity: Severity) {
+pub(crate) fn result(depth: usize, name: &dyn core::fmt::Display, severity: Severity) {
     let gutter_style = anstyle::Style::new().bold();
 
     let (call_width, _) = column_widths();
@@ -272,9 +271,7 @@ fn column_widths() -> (usize, usize) {
     let min_call_width = 40;
     let min_input_width = 20;
     let decor_width = 3;
-    let extra_width = term_width
-        .checked_sub(min_call_width + min_input_width + decor_width)
-        .unwrap_or_default();
+    let extra_width = term_width.saturating_sub(min_call_width + min_input_width + decor_width);
     let call_width = min_call_width + 2 * extra_width / 3;
     let input_width = min_input_width + extra_width / 3;
 
@@ -286,7 +283,7 @@ fn term_width() -> usize {
 }
 
 fn query_width() -> Option<usize> {
-    use is_terminal::IsTerminal;
+    use is_terminal_polyfill::IsTerminal;
     if std::io::stderr().is_terminal() {
         terminal_size::terminal_size().map(|(w, _h)| w.0.into())
     } else {

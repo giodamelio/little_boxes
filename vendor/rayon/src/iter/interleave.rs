@@ -1,30 +1,20 @@
 use super::plumbing::*;
 use super::*;
-use std::cmp;
 use std::iter::Fuse;
 
 /// `Interleave` is an iterator that interleaves elements of iterators
 /// `i` and `j` in one continuous iterator. This struct is created by
 /// the [`interleave()`] method on [`IndexedParallelIterator`]
 ///
-/// [`interleave()`]: trait.IndexedParallelIterator.html#method.interleave
-/// [`IndexedParallelIterator`]: trait.IndexedParallelIterator.html
+/// [`interleave()`]: IndexedParallelIterator::interleave()
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 #[derive(Debug, Clone)]
-pub struct Interleave<I, J>
-where
-    I: IndexedParallelIterator,
-    J: IndexedParallelIterator<Item = I::Item>,
-{
+pub struct Interleave<I, J> {
     i: I,
     j: J,
 }
 
-impl<I, J> Interleave<I, J>
-where
-    I: IndexedParallelIterator,
-    J: IndexedParallelIterator<Item = I::Item>,
-{
+impl<I, J> Interleave<I, J> {
     /// Creates a new `Interleave` iterator
     pub(super) fn new(i: I, j: J) -> Self {
         Interleave { i, j }
@@ -185,11 +175,11 @@ where
     }
 
     fn min_len(&self) -> usize {
-        cmp::max(self.i.min_len(), self.j.min_len())
+        Ord::max(self.i.min_len(), self.j.min_len())
     }
 
     fn max_len(&self) -> usize {
-        cmp::min(self.i.max_len(), self.j.max_len())
+        Ord::min(self.i.max_len(), self.j.max_len())
     }
 
     /// We know 0 < index <= self.i_len + self.j_len

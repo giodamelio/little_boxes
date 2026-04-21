@@ -1,13 +1,12 @@
-#![cfg(feature = "inline")]
 use std::borrow::Cow;
 use std::fmt;
 
+use crate::deadline_support::Instant;
 use crate::text::{DiffableStr, TextDiff};
 use crate::types::{Algorithm, Change, ChangeTag, DiffOp, DiffTag};
 use crate::{capture_diff_deadline, get_diff_ratio};
 
 use std::ops::Index;
-use std::time::{Duration, Instant};
 
 use super::utils::upper_seq_ratio;
 
@@ -77,7 +76,7 @@ impl<'bufs, 's, T: DiffableStr + ?Sized> MultiLookup<'bufs, 's, T> {
     }
 }
 
-impl<'bufs, 's, T: DiffableStr + ?Sized> Index<usize> for MultiLookup<'bufs, 's, T> {
+impl<T: DiffableStr + ?Sized> Index<usize> for MultiLookup<'_, '_, T> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -177,7 +176,7 @@ impl<'s, T: DiffableStr + ?Sized> From<Change<&'s T>> for InlineChange<'s, T> {
     }
 }
 
-impl<'s, T: DiffableStr + ?Sized> fmt::Display for InlineChange<'s, T> {
+impl<T: DiffableStr + ?Sized> fmt::Display for InlineChange<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (emphasized, value) in self.iter_strings_lossy() {
             let marker = match (emphasized, self.tag) {
@@ -195,11 +194,11 @@ impl<'s, T: DiffableStr + ?Sized> fmt::Display for InlineChange<'s, T> {
 }
 
 const MIN_RATIO: f32 = 0.5;
-const TIMEOUT_MS: u64 = 500;
 
 pub(crate) fn iter_inline_changes<'x, 'diff, 'old, 'new, 'bufs, T>(
     diff: &'diff TextDiff<'old, 'new, 'bufs, T>,
     op: &DiffOp,
+    deadline: Option<Instant>,
 ) -> impl Iterator<Item = InlineChange<'x, T>> + 'diff
 where
     T: DiffableStr + ?Sized,
@@ -231,7 +230,7 @@ where
         0..old_lookup.len(),
         &new_lookup,
         0..new_lookup.len(),
-        Some(Instant::now() + Duration::from_millis(TIMEOUT_MS)),
+        deadline,
     );
 
     if get_diff_ratio(&ops, old_lookup.len(), new_lookup.len()) < MIN_RATIO {

@@ -8,7 +8,7 @@
 //!     3. [Arg Attributes](#arg-attributes)
 //!     4. [ValueEnum Attributes](#valueenum-attributes)
 //!     5. [Possible Value Attributes](#possible-value-attributes)
-//! 3. [Arg Types](#arg-types)
+//! 3. [Field Types](#field-types)
 //! 4. [Doc Comments](#doc-comments)
 //! 5. [Mixing Builder and Derive APIs](#mixing-builder-and-derive-apis)
 //! 6. [Tips](#tips)
@@ -81,9 +81,7 @@
 //!     Variant1,
 //! }
 //!
-//! fn main() {
-//!     let cli = Cli::parse();
-//! }
+//! let cli = Cli::parse();
 //! ```
 //!
 //! Traits:
@@ -126,9 +124,13 @@
 //! magic attributes documentation for details.  This allows users to access the
 //! raw behavior of an attribute via `<attr>(<value>)` syntax.
 //!
+//! <div class="warning">
+//!
 //! **NOTE:** Some attributes are inferred from [Arg Types](#arg-types) and [Doc
 //! Comments](#doc-comments).  Explicit attributes take precedence over inferred
 //! attributes.
+//!
+//! </div>
 //!
 //! ### Command Attributes
 //!
@@ -190,8 +192,8 @@
 //!   [`Subcommand`][crate::Subcommand])
 //!   - When `Option<T>`, the subcommand becomes optional
 //!
-//! See [Configuring the Parser][_tutorial::chapter_1] and
-//! [Subcommands][_tutorial::chapter_2#subcommands] from the tutorial.
+//! See [Configuring the Parser][_tutorial#configuring-the-parser] and
+//! [Subcommands][_tutorial#subcommands] from the tutorial.
 //!
 //! ### ArgGroup Attributes
 //!
@@ -211,14 +213,17 @@
 //! - For `struct`s, [`multiple = true`][crate::ArgGroup::multiple] is implied
 //! - `enum` support is tracked at [#2621](https://github.com/clap-rs/clap/issues/2621)
 //!
-//! See [Argument Relations][_tutorial::chapter_3#argument-relations] from the tutorial.
+//! See [Argument Relations][_tutorial#argument-relations] from the tutorial.
 //!
 //! ### Arg Attributes
 //!
 //! These correspond to a [`Arg`][crate::Arg].
+//! The default state for a field without attributes is to be a positional argument with [behavior
+//! inferred from the field type](#arg-types).
+//! `#[arg(...)]` attributes allow overriding or extending those defaults.
 //!
 //! **Raw attributes:**  Any [`Arg` method][crate::Arg] can also be used as an attribute, see [Terminology](#terminology) for syntax.
-//! - e.g. `#[arg(max_values(3))]` would translate to `arg.max_values(3)`
+//! - e.g. `#[arg(num_args(..=3))]` would translate to `arg.num_args(..=3)`
 //!
 //! **Magic attributes**:
 //! - `id = <expr>`: [`Arg::id`][crate::Arg::id]
@@ -262,7 +267,7 @@
 //!   - Requires field arg to be of type `Vec<T>` and `T` to implement `std::convert::Into<OsString>` or `#[arg(value_enum)]`
 //!   - `<expr>` must implement `IntoIterator<T>`
 //!
-//! See [Adding Arguments][_tutorial::chapter_2] and [Validation][_tutorial::chapter_3] from the
+//! See [Adding Arguments][_tutorial#adding-arguments] and [Validation][_tutorial#validation] from the
 //! tutorial.
 //!
 //! ### ValueEnum Attributes
@@ -271,7 +276,7 @@
 //!   - When not present: `"kebab-case"`
 //!   - Available values: `"camelCase"`, `"kebab-case"`, `"PascalCase"`, `"SCREAMING_SNAKE_CASE"`, `"snake_case"`, `"lower"`, `"UPPER"`, `"verbatim"`
 //!
-//! See [Enumerated values][_tutorial::chapter_3#enumerated-values] from the tutorial.
+//! See [Enumerated values][_tutorial#enumerated-values] from the tutorial.
 //!
 //! ### Possible Value Attributes
 //!
@@ -287,30 +292,42 @@
 //!   - When not present: [Doc comment summary](#doc-comments)
 //! - `skip`: Ignore this variant
 //!
-//! ## Arg Types
+//! ## Field Types
 //!
-//! `clap` assumes some intent based on the type used:
+//! `clap` assumes some intent based on the type used.
 //!
-//! | Type                | Effect                               | Implies                                                     |
-//! |---------------------|--------------------------------------|-------------------------------------------------------------|
-//! | `()`                | user-defined                         | `.action(ArgAction::Set).required(false)`                   |
-//! | `bool`              | flag                                 | `.action(ArgAction::SetTrue)`                               |
-//! | `Option<T>`         | optional argument                    | `.action(ArgAction::Set).required(false)`                   |
-//! | `Option<Option<T>>` | optional value for optional argument | `.action(ArgAction::Set).required(false).num_args(0..=1)`   |
-//! | `T`                 | required argument                    | `.action(ArgAction::Set).required(!has_default)`            |
-//! | `Vec<T>`            | `0..` occurrences of argument        | `.action(ArgAction::Append).required(false)`  |
-//! | `Option<Vec<T>>`    | `0..` occurrences of argument        | `.action(ArgAction::Append).required(false)`  |
+//! ### Subcommand Types
+//!
+//! | Type                  | Effect              | Implies                                                   |
+//! |-----------------------|---------------------|-----------------------------------------------------------|
+//! | `Option<T>`           | optional subcommand |                                                           |
+//! | `T`                   | required subcommand | `.subcommand_required(true).arg_required_else_help(true)` |
+//!
+//! ### Arg Types
+//!
+//! | Type                  | Effect                                               | Implies                                                     | Notes |
+//! |-----------------------|------------------------------------------------------|-------------------------------------------------------------|-------|
+//! | `()`                  | user-defined                                         | `.action(ArgAction::Set).required(false)`                   |       |
+//! | `bool`                | flag                                                 | `.action(ArgAction::SetTrue)`                               |       |
+//! | `Option<T>`           | optional argument                                    | `.action(ArgAction::Set).required(false)`                   |       |
+//! | `Option<Option<T>>`   | optional value for optional argument                 | `.action(ArgAction::Set).required(false).num_args(0..=1)`   |       |
+//! | `T`                   | required argument                                    | `.action(ArgAction::Set).required(!has_default)`            |       |
+//! | `Vec<T>`              | `0..` occurrences of argument                        | `.action(ArgAction::Append).required(false)`  |       |
+//! | `Option<Vec<T>>`      | `0..` occurrences of argument                        | `.action(ArgAction::Append).required(false)`  |       |
+//! | `Vec<Vec<T>>`         | `0..` occurrences of argument, grouped by occurrence | `.action(ArgAction::Append).required(false)`  | requires `unstable-v5` |
+//! | `Option<Vec<Vec<T>>>` | `0..` occurrences of argument, grouped by occurrence | `.action(ArgAction::Append).required(false)`  | requires `unstable-v5` |
 //!
 //! In addition, [`.value_parser(value_parser!(T))`][crate::value_parser!] is called for each
-//! field.
+//! field in the absence of a [`#[arg(value_parser)]` attribute](#arg-attributes).
 //!
 //! Notes:
 //! - For custom type behavior, you can override the implied attributes/settings and/or set additional ones
 //!   - To force any inferred type (like `Vec<T>`) to be treated as `T`, you can refer to the type
 //!     by another means, like using `std::vec::Vec` instead of `Vec`.  For improving this, see
 //!     [#4626](https://github.com/clap-rs/clap/issues/4626).
-//! - `Option<Vec<T>>` will be `None` instead of `vec![]` if no arguments are provided.
+//! - `Option<Vec<T>>` and `Option<Vec<Vec<T>>` will be `None` instead of `vec![]` if no arguments are provided.
 //!   - This gives the user some flexibility in designing their argument, like with `num_args(0..)`
+//! - `Vec<Vec<T>>` will need [`Arg::num_args`][crate::Arg::num_args] set to be meaningful
 //!
 //! ## Doc Comments
 //!
@@ -346,6 +363,8 @@
 //! }
 //! ```
 //!
+//! <div class="warning">
+//!
 //! **NOTE:** Attributes have priority over doc comments!
 //!
 //! **Top level doc comments always generate `Command::about/long_about` calls!**
@@ -353,6 +372,8 @@
 //! use the `about` / `long_about` attributes to override the calls generated from
 //! the doc comment.  To clear `long_about`, you can use
 //! `#[command(long_about = None)]`.
+//!
+//! </div>
 //!
 //! ### Pre-processing
 //!

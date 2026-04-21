@@ -39,7 +39,7 @@ impl<K: PartialEq + Eq, V> FlatMap<K, V> {
         }
     }
 
-    pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
+    pub(crate) fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
         Q: Eq,
@@ -52,7 +52,7 @@ impl<K: PartialEq + Eq, V> FlatMap<K, V> {
         false
     }
 
-    pub fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<V>
+    pub(crate) fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<V>
     where
         K: Borrow<Q>,
         Q: std::hash::Hash + Eq,
@@ -60,16 +60,17 @@ impl<K: PartialEq + Eq, V> FlatMap<K, V> {
         self.remove_entry(key).map(|(_, v)| v)
     }
 
-    pub fn remove_entry<Q: ?Sized>(&mut self, key: &Q) -> Option<(K, V)>
+    pub(crate) fn remove_entry<Q: ?Sized>(&mut self, key: &Q) -> Option<(K, V)>
     where
         K: Borrow<Q>,
         Q: std::hash::Hash + Eq,
     {
-        let index = some!(self
-            .keys
-            .iter()
-            .enumerate()
-            .find_map(|(i, k)| (k.borrow() == key).then_some(i)));
+        let index = some!(
+            self.keys
+                .iter()
+                .enumerate()
+                .find_map(|(i, k)| (k.borrow() == key).then_some(i))
+        );
         let key = self.keys.remove(index);
         let value = self.values.remove(index);
         Some((key, value))
@@ -79,7 +80,7 @@ impl<K: PartialEq + Eq, V> FlatMap<K, V> {
         self.keys.is_empty()
     }
 
-    pub fn entry(&mut self, key: K) -> Entry<K, V> {
+    pub(crate) fn entry(&mut self, key: K) -> Entry<'_, K, V> {
         for (index, existing) in self.keys.iter().enumerate() {
             if *existing == key {
                 return Entry::Occupied(OccupiedEntry { v: self, index });
@@ -88,7 +89,7 @@ impl<K: PartialEq + Eq, V> FlatMap<K, V> {
         Entry::Vacant(VacantEntry { v: self, key })
     }
 
-    pub fn get<Q: ?Sized>(&self, k: &Q) -> Option<&V>
+    pub(crate) fn get<Q: ?Sized>(&self, k: &Q) -> Option<&V>
     where
         K: Borrow<Q>,
         Q: Eq,
@@ -101,7 +102,7 @@ impl<K: PartialEq + Eq, V> FlatMap<K, V> {
         None
     }
 
-    pub fn get_mut<Q: ?Sized>(&mut self, k: &Q) -> Option<&mut V>
+    pub(crate) fn get_mut<Q: ?Sized>(&mut self, k: &Q) -> Option<&mut V>
     where
         K: Borrow<Q>,
         Q: Eq,
@@ -114,18 +115,22 @@ impl<K: PartialEq + Eq, V> FlatMap<K, V> {
         None
     }
 
-    pub fn keys(&self) -> std::slice::Iter<'_, K> {
+    pub(crate) fn keys(&self) -> std::slice::Iter<'_, K> {
         self.keys.iter()
     }
 
-    pub fn iter(&self) -> Iter<K, V> {
+    pub(crate) fn values(&self) -> std::slice::Iter<'_, V> {
+        self.values.iter()
+    }
+
+    pub(crate) fn iter(&self) -> Iter<'_, K, V> {
         Iter {
             keys: self.keys.iter(),
             values: self.values.iter(),
         }
     }
 
-    pub fn iter_mut(&mut self) -> IterMut<K, V> {
+    pub(crate) fn iter_mut(&mut self) -> IterMut<'_, K, V> {
         IterMut {
             keys: self.keys.iter_mut(),
             values: self.values.iter_mut(),
@@ -142,13 +147,13 @@ impl<K: PartialEq + Eq, V> Default for FlatMap<K, V> {
     }
 }
 
-pub enum Entry<'a, K: 'a, V: 'a> {
+pub(crate) enum Entry<'a, K, V> {
     Vacant(VacantEntry<'a, K, V>),
     Occupied(OccupiedEntry<'a, K, V>),
 }
 
 impl<'a, K: 'a, V: 'a> Entry<'a, K, V> {
-    pub fn or_insert(self, default: V) -> &'a mut V {
+    pub(crate) fn or_insert(self, default: V) -> &'a mut V {
         match self {
             Entry::Occupied(entry) => &mut entry.v.values[entry.index],
             Entry::Vacant(entry) => {
@@ -159,7 +164,7 @@ impl<'a, K: 'a, V: 'a> Entry<'a, K, V> {
         }
     }
 
-    pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
+    pub(crate) fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
         match self {
             Entry::Occupied(entry) => &mut entry.v.values[entry.index],
             Entry::Vacant(entry) => {
@@ -171,17 +176,17 @@ impl<'a, K: 'a, V: 'a> Entry<'a, K, V> {
     }
 }
 
-pub struct VacantEntry<'a, K: 'a, V: 'a> {
+pub(crate) struct VacantEntry<'a, K, V> {
     v: &'a mut FlatMap<K, V>,
     key: K,
 }
 
-pub struct OccupiedEntry<'a, K: 'a, V: 'a> {
+pub(crate) struct OccupiedEntry<'a, K, V> {
     v: &'a mut FlatMap<K, V>,
     index: usize,
 }
 
-pub struct Iter<'a, K: 'a, V: 'a> {
+pub(crate) struct Iter<'a, K, V> {
     keys: std::slice::Iter<'a, K>,
     values: std::slice::Iter<'a, V>,
 }
@@ -215,9 +220,9 @@ impl<'a, K, V> DoubleEndedIterator for Iter<'a, K, V> {
     }
 }
 
-impl<'a, K, V> ExactSizeIterator for Iter<'a, K, V> {}
+impl<K, V> ExactSizeIterator for Iter<'_, K, V> {}
 
-pub struct IterMut<'a, K: 'a, V: 'a> {
+pub(crate) struct IterMut<'a, K, V> {
     keys: std::slice::IterMut<'a, K>,
     values: std::slice::IterMut<'a, V>,
 }
@@ -251,4 +256,4 @@ impl<'a, K, V> DoubleEndedIterator for IterMut<'a, K, V> {
     }
 }
 
-impl<'a, K, V> ExactSizeIterator for IterMut<'a, K, V> {}
+impl<K, V> ExactSizeIterator for IterMut<'_, K, V> {}

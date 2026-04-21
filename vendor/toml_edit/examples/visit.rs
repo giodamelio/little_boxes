@@ -1,8 +1,8 @@
 //! Example for how to use `VisitMut` to iterate over a table.
 
 use std::collections::BTreeSet;
-use toml_edit::visit::*;
-use toml_edit::visit_mut::*;
+use toml_edit::visit::{visit_table_like_kv, Visit};
+use toml_edit::visit_mut::{visit_table_like_kv_mut, visit_table_mut, VisitMut};
 use toml_edit::{Array, DocumentMut, InlineTable, Item, KeyMut, Table, Value};
 
 /// This models the visit state for dependency keys in a `Cargo.toml`.
@@ -46,15 +46,15 @@ impl VisitState {
     fn descend(self, key: &str) -> Self {
         match (self, key) {
             (
-                VisitState::Root | VisitState::TargetWithSpec,
+                Self::Root | Self::TargetWithSpec,
                 "dependencies" | "build-dependencies" | "dev-dependencies",
-            ) => VisitState::Dependencies,
-            (VisitState::Root, "target") => VisitState::Target,
-            (VisitState::Root | VisitState::TargetWithSpec, _) => VisitState::Other,
-            (VisitState::Target, _) => VisitState::TargetWithSpec,
-            (VisitState::Dependencies, _) => VisitState::SubDependencies,
-            (VisitState::SubDependencies, _) => VisitState::SubDependencies,
-            (VisitState::Other, _) => VisitState::Other,
+            ) => Self::Dependencies,
+            (Self::Root, "target") => Self::Target,
+            (Self::Root | Self::TargetWithSpec, _) => Self::Other,
+            (Self::Target, _) => Self::TargetWithSpec,
+            (Self::Dependencies, _) => Self::SubDependencies,
+            (Self::SubDependencies, _) => Self::SubDependencies,
+            (Self::Other, _) => Self::Other,
         }
     }
 }
@@ -159,7 +159,7 @@ impl VisitMut for NormalizeDependencyTablesVisitor {
     }
 }
 
-/// This is the input provided to visit_mut_example.
+/// This is the input provided to `visit_mut_example`.
 static INPUT: &str = r#"
 [package]
 name = "my-package"
@@ -195,7 +195,7 @@ path = "crates/cargo-test-macro"
 version = "0.4"
 "#;
 
-/// This is the output produced by visit_mut_example.
+/// This is the output produced by `visit_mut_example`.
 #[cfg(test)]
 static VISIT_MUT_OUTPUT: &str = r#"
 [package]
@@ -250,7 +250,7 @@ fn main() {
 
     println!("** visit_mut example");
     visit_mut_example(&mut document);
-    println!("{}", document);
+    println!("{document}");
 }
 
 #[cfg(test)]
@@ -280,5 +280,5 @@ fn visit_mut_correct() {
     let mut document: DocumentMut = INPUT.parse().expect("input is valid TOML");
 
     visit_mut_example(&mut document);
-    assert_eq!(format!("{}", document), VISIT_MUT_OUTPUT);
+    assert_eq!(format!("{document}"), VISIT_MUT_OUTPUT);
 }

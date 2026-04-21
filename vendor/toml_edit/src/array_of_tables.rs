@@ -2,7 +2,7 @@ use std::iter::FromIterator;
 
 use crate::{Array, Item, Table};
 
-/// Type representing a TOML array of tables
+/// A top-level sequence of [`Table`]s, each under their own header
 #[derive(Clone, Debug, Default)]
 pub struct ArrayOfTables {
     // Always Vec<Item::Table>, just `Item` to make `Index` work
@@ -32,8 +32,10 @@ impl ArrayOfTables {
         a
     }
 
-    /// Returns the location within the original document
-    pub(crate) fn span(&self) -> Option<std::ops::Range<usize>> {
+    /// The location within the original document
+    ///
+    /// This generally requires a [`Document`][crate::Document].
+    pub fn span(&self) -> Option<std::ops::Range<usize>> {
         self.span.clone()
     }
 
@@ -62,14 +64,14 @@ impl ArrayOfTables {
         self.values.len()
     }
 
-    /// Returns true iff `self.len() == 0`.
+    /// Returns true if `self.len() == 0`.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Removes all the tables.
     pub fn clear(&mut self) {
-        self.values.clear()
+        self.values.clear();
     }
 
     /// Returns an optional reference to the table.
@@ -88,8 +90,11 @@ impl ArrayOfTables {
     }
 
     /// Removes a table with the given index.
-    pub fn remove(&mut self, index: usize) {
-        self.values.remove(index);
+    pub fn remove(&mut self, index: usize) -> Table {
+        self.values
+            .remove(index)
+            .into_table()
+            .expect("cannot have any other item in an array-of-tables")
     }
 
     /// Retains only the elements specified by the `keep` predicate.
@@ -107,11 +112,11 @@ impl ArrayOfTables {
     }
 }
 
-/// An iterator type over `ArrayOfTables`'s values.
+/// An iterator type over [`ArrayOfTables`]'s [`Table`]s
 pub type ArrayOfTablesIter<'a> = Box<dyn Iterator<Item = &'a Table> + 'a>;
-/// An iterator type over `ArrayOfTables`'s values.
+/// An iterator type over [`ArrayOfTables`]'s [`Table`]s
 pub type ArrayOfTablesIterMut<'a> = Box<dyn Iterator<Item = &'a mut Table> + 'a>;
-/// An iterator type over `ArrayOfTables`'s values.
+/// An iterator type over [`ArrayOfTables`]'s [`Table`]s
 pub type ArrayOfTablesIntoIter = Box<dyn Iterator<Item = Table>>;
 
 impl Extend<Table> for ArrayOfTables {
@@ -128,7 +133,7 @@ impl FromIterator<Table> for ArrayOfTables {
         I: IntoIterator<Item = Table>,
     {
         let v = iter.into_iter().map(Item::Table);
-        ArrayOfTables {
+        Self {
             values: v.collect(),
             span: None,
         }

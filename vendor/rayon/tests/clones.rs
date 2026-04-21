@@ -1,9 +1,9 @@
 use rayon::prelude::*;
+use std::fmt::Debug;
 
 fn check<I>(iter: I)
 where
-    I: ParallelIterator + Clone,
-    I::Item: std::fmt::Debug + PartialEq,
+    I: ParallelIterator<Item: Debug + PartialEq> + Clone,
 {
     let a: Vec<_> = iter.clone().collect();
     let b: Vec<_> = iter.collect();
@@ -109,11 +109,13 @@ fn clone_str() {
 fn clone_vec() {
     let v: Vec<_> = (0..1000).collect();
     check(v.par_iter());
+    check(v.par_chunk_by(i32::eq));
     check(v.par_chunks(42));
     check(v.par_chunks_exact(42));
     check(v.par_rchunks(42));
     check(v.par_rchunks_exact(42));
     check(v.par_windows(42));
+    check(v.par_array_windows::<42>());
     check(v.par_split(|x| x % 3 == 0));
     check(v.par_split_inclusive(|x| x % 3 == 0));
     check(v.into_par_iter());
@@ -195,7 +197,7 @@ fn clone_once() {
 fn clone_repeat() {
     let x: Option<i32> = None;
     check(rayon::iter::repeat(x).while_some());
-    check(rayon::iter::repeatn(x, 1000));
+    check(rayon::iter::repeat_n(x, 1000));
 }
 
 #[test]

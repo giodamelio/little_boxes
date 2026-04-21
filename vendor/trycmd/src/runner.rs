@@ -12,8 +12,10 @@ use std::eprintln;
 use std::io::stderr;
 
 use rayon::prelude::*;
-use snapbox::data::{DataFormat, NormalizeNewlines, NormalizePaths};
-use snapbox::path::FileType;
+use snapbox::data::DataFormat;
+use snapbox::dir::FileType;
+use snapbox::filter::{Filter as _, FilterNewlines, FilterPaths, NormalizeToExpected};
+use snapbox::IntoData;
 
 #[derive(Debug)]
 pub(crate) struct Runner {
@@ -35,8 +37,9 @@ impl Runner {
         &self,
         mode: &Mode,
         bins: &crate::BinRegistry,
-        substitutions: &snapbox::Substitutions,
+        substitutions: &snapbox::Redactions,
     ) {
+        #![allow(unexpected_cfgs)] // HACK: until we upgrade the minimum anstream
         let palette = snapbox::report::Palette::color();
 
         if self.cases.is_empty() {
@@ -57,13 +60,21 @@ impl Runner {
                             snapbox::debug!("Case: {:#?}", s);
                             match s {
                                 Ok(status) => {
-                                    let _ = writeln!(
+                                    let _ = write!(
                                         stderr,
                                         "{} {} ... {}",
                                         palette.hint("Testing"),
                                         status.name(),
-                                        status.spawn.status.summary()
+                                        status.spawn.status.summary(),
                                     );
+                                    if let Some(duration) = status.duration {
+                                        let _ = write!(
+                                            stderr,
+                                            " {}",
+                                            palette.hint(humantime::format_duration(duration)),
+                                        );
+                                    }
+                                    let _ = writeln!(stderr);
                                     if !status.is_ok() {
                                         // Assuming `status` will print the newline
                                         let _ = write!(stderr, "{}", &status);
@@ -71,13 +82,21 @@ impl Runner {
                                     None
                                 }
                                 Err(status) => {
-                                    let _ = writeln!(
+                                    let _ = write!(
                                         stderr,
                                         "{} {} ... {}",
                                         palette.hint("Testing"),
                                         status.name(),
                                         palette.error("failed"),
                                     );
+                                    if let Some(duration) = status.duration {
+                                        let _ = write!(
+                                            stderr,
+                                            " {}",
+                                            palette.hint(humantime::format_duration(duration)),
+                                        );
+                                    }
+                                    let _ = writeln!(stderr);
                                     // Assuming `status` will print the newline
                                     let _ = write!(stderr, "{}", &status);
                                     Some(status)
@@ -139,7 +158,7 @@ impl Case {
         &self,
         mode: &Mode,
         bins: &crate::BinRegistry,
-        substitutions: &snapbox::Substitutions,
+        substitutions: &snapbox::Redactions,
     ) -> Vec<Result<Output, Output>> {
         if self.expected == Some(crate::schema::CommandStatus::Skipped) {
             let output = Output::sequence(self.path.clone());
@@ -177,7 +196,7 @@ impl Case {
             Err(e) => {
                 let output = Output::step(self.path.clone(), "setup".into());
                 return vec![Err(
-                    output.error(format!("Failed to initialize sandbox: {}", e).into())
+                    output.error(format!("Failed to initialize sandbox: {e}").into())
                 )];
             }
         };
@@ -186,7 +205,7 @@ impl Case {
             .map(|p| {
                 sequence.fs.rel_cwd().map(|rel| {
                     let p = p.join(rel);
-                    snapbox::path::strip_trailing_slash(&p).to_owned()
+                    snapbox::dir::strip_trailing_slash(&p).to_owned()
                 })
             })
             .transpose()
@@ -199,14 +218,10 @@ impl Case {
         };
         let mut substitutions = substitutions.clone();
         if let Some(root) = fs_context.path() {
-            substitutions
-                .insert("[ROOT]", root.display().to_string())
-                .unwrap();
+            substitutions.insert("[ROOT]", root.to_owned()).unwrap();
         }
         if let Some(cwd) = cwd.clone().or_else(|| std::env::current_dir().ok()) {
-            substitutions
-                .insert("[CWD]", cwd.display().to_string())
-                .unwrap();
+            substitutions.insert("[CWD]", cwd).unwrap();
         }
         substitutions
             .insert("[EXE]", std::env::consts::EXE_SUFFIX)
@@ -215,12 +230,20 @@ impl Case {
 
         let mut outputs = Vec::with_capacity(sequence.steps.len());
         let mut prior_step_failed = false;
+        let mut steps_run = false;
         for step in &mut sequence.steps {
             if prior_step_failed {
                 step.expected_status = Some(crate::schema::CommandStatus::Skipped);
             }
 
             let step_status = self.run_step(step, cwd.as_deref(), bins, &substitutions);
+            if step_status
+                .as_ref()
+                .map(|s| s.spawn.status == SpawnStatus::Ok)
+                .unwrap_or(true)
+            {
+                steps_run = true;
+            }
             if fs_context.is_mutable() && step_status.is_err() && *mode == Mode::Fail {
                 prior_step_failed = true;
             }
@@ -270,27 +293,33 @@ impl Case {
             let mut ok = true;
             let mut output = Output::step(self.path.clone(), "teardown".into());
 
-            output.fs = match self.validate_fs(
-                fs_context.path().expect("sandbox must be filled"),
-                output.fs,
-                mode,
-                &substitutions,
-            ) {
-                Ok(fs) => fs,
-                Err(fs) => {
+            if steps_run {
+                output.fs = match self.validate_fs(
+                    fs_context.path().expect("sandbox must be filled"),
+                    output.fs,
+                    mode,
+                    &substitutions,
+                ) {
+                    Ok(fs) => fs,
+                    Err(fs) => {
+                        ok = false;
+                        fs
+                    }
+                };
+                if let Err(err) = fs_context.close() {
                     ok = false;
-                    fs
+                    output.fs.context.push(FileStatus::Failure(
+                        format!("Failed to cleanup sandbox: {err}").into(),
+                    ));
                 }
-            };
-            if let Err(err) = fs_context.close() {
-                ok = false;
-                output.fs.context.push(FileStatus::Failure(
-                    format!("Failed to cleanup sandbox: {}", err).into(),
-                ));
             }
 
             let output = if ok {
-                output.spawn.status = SpawnStatus::Ok;
+                output.spawn.status = if steps_run {
+                    SpawnStatus::Ok
+                } else {
+                    SpawnStatus::Skipped
+                };
                 Ok(output)
             } else {
                 output.spawn.status = SpawnStatus::Failure("Files left in unexpected state".into());
@@ -308,7 +337,7 @@ impl Case {
         step: &mut crate::schema::Step,
         cwd: Option<&std::path::Path>,
         bins: &crate::BinRegistry,
-        substitutions: &snapbox::Substitutions,
+        substitutions: &snapbox::Redactions,
     ) -> Result<Output, Output> {
         let output = if let Some(id) = step.id.clone() {
             Output::step(self.path.clone(), id)
@@ -318,7 +347,7 @@ impl Case {
 
         let mut bin = step.bin.take();
         if bin.is_none() {
-            bin = self.default_bin.clone()
+            bin.clone_from(&self.default_bin);
         }
         bin = bin
             .map(|name| bins.resolve_bin(name))
@@ -357,10 +386,13 @@ impl Case {
         }
 
         let cmd = step.to_command(cwd).map_err(|e| output.clone().error(e))?;
+        let timer = std::time::Instant::now();
         let cmd_output = cmd
             .output()
             .map_err(|e| output.clone().error(e.to_string().into()))?;
+
         let output = output.output(cmd_output);
+        let output = output.duration(timer.elapsed());
 
         // For Mode::Dump's sake, allow running all
         let output = self.validate_spawn(output, step.expected_status());
@@ -406,7 +438,7 @@ impl Case {
         &self,
         mut output: Output,
         step: &crate::schema::Step,
-        substitutions: &snapbox::Substitutions,
+        substitutions: &snapbox::Redactions,
     ) -> Output {
         output.stdout = self.validate_stream(
             output.stdout,
@@ -429,7 +461,7 @@ impl Case {
         stream: Option<Stream>,
         expected_content: Option<&crate::Data>,
         binary: bool,
-        substitutions: &snapbox::Substitutions,
+        substitutions: &snapbox::Redactions,
     ) -> Option<Stream> {
         let mut stream = stream?;
 
@@ -441,12 +473,9 @@ impl Case {
         }
 
         if let Some(expected_content) = expected_content {
-            stream.content = stream
-                .content
-                .normalize(snapbox::data::NormalizeMatches::new(
-                    substitutions,
-                    expected_content,
-                ));
+            stream.content = NormalizeToExpected::new()
+                .redact_with(substitutions)
+                .normalize(stream.content, expected_content);
 
             if stream.content != *expected_content {
                 stream.status = StreamStatus::Expected(expected_content.clone());
@@ -500,17 +529,17 @@ impl Case {
         actual_root: &std::path::Path,
         mut fs: Filesystem,
         mode: &Mode,
-        substitutions: &snapbox::Substitutions,
+        substitutions: &snapbox::Redactions,
     ) -> Result<Filesystem, Filesystem> {
         let mut ok = true;
 
         #[cfg(feature = "filesystem")]
         if let Mode::Dump(_) = mode {
-            // Handled as part of PathFixture
+            // Handled as part of DirRoot
         } else {
             let fixture_root = self.path.with_extension("out");
             if fixture_root.exists() {
-                for status in snapbox::path::PathDiff::subset_matches_iter(
+                for status in snapbox::dir::PathDiff::subset_matches_iter(
                     fixture_root,
                     actual_root,
                     substitutions,
@@ -553,6 +582,7 @@ pub(crate) struct Output {
     stdout: Option<Stream>,
     stderr: Option<Stream>,
     fs: Filesystem,
+    duration: Option<std::time::Duration>,
 }
 
 impl Output {
@@ -567,6 +597,7 @@ impl Output {
             stdout: None,
             stderr: None,
             fs: Default::default(),
+            duration: Default::default(),
         }
     }
 
@@ -578,6 +609,7 @@ impl Output {
             stdout: None,
             stderr: None,
             fs: Default::default(),
+            duration: Default::default(),
         }
     }
 
@@ -587,12 +619,12 @@ impl Output {
         self.spawn.status = SpawnStatus::Ok;
         self.stdout = Some(Stream {
             stream: Stdio::Stdout,
-            content: output.stdout.into(),
+            content: output.stdout.into_data(),
             status: StreamStatus::Ok,
         });
         self.stderr = Some(Stream {
             stream: Stdio::Stderr,
-            content: output.stderr.into(),
+            content: output.stderr.into_data(),
             status: StreamStatus::Ok,
         });
         self
@@ -600,6 +632,11 @@ impl Output {
 
     fn error(mut self, msg: crate::Error) -> Self {
         self.spawn.status = SpawnStatus::Failure(msg);
+        self
+    }
+
+    fn duration(mut self, duration: std::time::Duration) -> Self {
+        self.duration = Some(duration);
         self
     }
 
@@ -740,9 +777,7 @@ impl Stream {
         if content.format() != DataFormat::Text {
             self.status = StreamStatus::Failure("Unable to convert underlying Data to Text".into());
         }
-        self.content = content
-            .normalize(NormalizePaths)
-            .normalize(NormalizeNewlines);
+        self.content = FilterNewlines.filter(FilterPaths.filter(content));
         self
     }
 
@@ -765,7 +800,7 @@ impl std::fmt::Display for Stream {
                     f,
                     "{} {}:",
                     self.stream,
-                    palette.error(format_args!("({})", msg))
+                    palette.error(format_args!("({msg})"))
                 )?;
                 writeln!(f, "{}", palette.info(&self.content))?;
             }
@@ -886,11 +921,11 @@ impl FileStatus {
     }
 }
 
-impl From<snapbox::path::PathDiff> for FileStatus {
-    fn from(other: snapbox::path::PathDiff) -> Self {
+impl From<snapbox::dir::PathDiff> for FileStatus {
+    fn from(other: snapbox::dir::PathDiff) -> Self {
         match other {
-            snapbox::path::PathDiff::Failure(err) => FileStatus::Failure(err),
-            snapbox::path::PathDiff::TypeMismatch {
+            snapbox::dir::PathDiff::Failure(err) => FileStatus::Failure(err),
+            snapbox::dir::PathDiff::TypeMismatch {
                 expected_path,
                 actual_path,
                 expected_type,
@@ -901,7 +936,7 @@ impl From<snapbox::path::PathDiff> for FileStatus {
                 actual_type,
                 expected_type,
             },
-            snapbox::path::PathDiff::LinkMismatch {
+            snapbox::dir::PathDiff::LinkMismatch {
                 expected_path,
                 actual_path,
                 expected_target,
@@ -912,7 +947,7 @@ impl From<snapbox::path::PathDiff> for FileStatus {
                 actual_target,
                 expected_target,
             },
-            snapbox::path::PathDiff::ContentMismatch {
+            snapbox::dir::PathDiff::ContentMismatch {
                 expected_path,
                 actual_path,
                 expected_content,
@@ -1023,21 +1058,21 @@ fn fs_context(
     path: &std::path::Path,
     cwd: Option<&std::path::Path>,
     sandbox: bool,
-    mode: &crate::Mode,
-) -> Result<snapbox::path::PathFixture, crate::Error> {
+    mode: &Mode,
+) -> Result<snapbox::dir::DirRoot, crate::Error> {
     if sandbox {
         #[cfg(feature = "filesystem")]
         match mode {
-            crate::Mode::Dump(root) => {
+            Mode::Dump(root) => {
                 let target = root.join(path.with_extension("out").file_name().unwrap());
-                let mut context = snapbox::path::PathFixture::mutable_at(&target)?;
+                let mut context = snapbox::dir::DirRoot::mutable_at(&target)?;
                 if let Some(cwd) = cwd {
                     context = context.with_template(cwd)?;
                 }
                 Ok(context)
             }
-            crate::Mode::Fail | crate::Mode::Overwrite => {
-                let mut context = snapbox::path::PathFixture::mutable_temp()?;
+            Mode::Fail | Mode::Overwrite => {
+                let mut context = snapbox::dir::DirRoot::mutable_temp()?;
                 if let Some(cwd) = cwd {
                     context = context.with_template(cwd)?;
                 }
@@ -1048,7 +1083,7 @@ fn fs_context(
         Err("Sandboxing is disabled".into())
     } else {
         Ok(cwd
-            .map(snapbox::path::PathFixture::immutable)
-            .unwrap_or_else(snapbox::path::PathFixture::none))
+            .map(snapbox::dir::DirRoot::immutable)
+            .unwrap_or_else(snapbox::dir::DirRoot::none))
     }
 }

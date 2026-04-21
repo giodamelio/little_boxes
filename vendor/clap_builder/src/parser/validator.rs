@@ -1,14 +1,14 @@
 // Internal
+use crate::INTERNAL_ERROR_MSG;
 use crate::builder::StyledStr;
 use crate::builder::{Arg, ArgGroup, ArgPredicate, Command, PossibleValue};
 use crate::error::{Error, Result as ClapResult};
 use crate::output::Usage;
-use crate::parser::{ArgMatcher, ParseState};
+use crate::parser::ArgMatcher;
 use crate::util::ChildGraph;
 use crate::util::FlatMap;
 use crate::util::FlatSet;
 use crate::util::Id;
-use crate::INTERNAL_ERROR_MSG;
 
 pub(crate) struct Validator<'cmd> {
     cmd: &'cmd Command,
@@ -21,36 +21,10 @@ impl<'cmd> Validator<'cmd> {
         Validator { cmd, required }
     }
 
-    pub(crate) fn validate(
-        &mut self,
-        parse_state: ParseState,
-        matcher: &mut ArgMatcher,
-    ) -> ClapResult<()> {
+    pub(crate) fn validate(&mut self, matcher: &mut ArgMatcher) -> ClapResult<()> {
         debug!("Validator::validate");
         let conflicts = Conflicts::with_args(self.cmd, matcher);
         let has_subcmd = matcher.subcommand_name().is_some();
-
-        if let ParseState::Opt(a) = parse_state {
-            debug!("Validator::validate: needs_val_of={a:?}");
-
-            let o = &self.cmd[&a];
-            let should_err = if let Some(v) = matcher.args.get(o.get_id()) {
-                v.all_val_groups_empty() && o.get_min_vals() != 0
-            } else {
-                true
-            };
-            if should_err {
-                return Err(Error::empty_value(
-                    self.cmd,
-                    &get_possible_values_cli(o)
-                        .iter()
-                        .filter(|pv| !pv.is_hide_set())
-                        .map(|n| n.get_name().to_owned())
-                        .collect::<Vec<_>>(),
-                    o.to_string(),
-                ));
-            }
-        }
 
         if !has_subcmd && self.cmd.is_arg_required_else_help_set() {
             let num_user_values = matcher
@@ -112,7 +86,7 @@ impl<'cmd> Validator<'cmd> {
         let args_count = matcher
             .args()
             .filter(|(arg_id, matched)| {
-                matched.check_explicit(&crate::builder::ArgPredicate::IsPresent)
+                matched.check_explicit(&ArgPredicate::IsPresent)
                     // Avoid including our own groups by checking none of them.  If a group is present, the
                     // args for the group will be.
                     && self.cmd.find(arg_id).is_some()
@@ -125,15 +99,14 @@ impl<'cmd> Validator<'cmd> {
 
         matcher
             .args()
-            .filter(|(_, matched)| matched.check_explicit(&crate::builder::ArgPredicate::IsPresent))
-            .filter_map(|(id, _)| {
+            .filter(|(_, matched)| matched.check_explicit(&ArgPredicate::IsPresent))
+            .find_map(|(id, _)| {
                 debug!("Validator::validate_exclusive:iter:{id:?}");
                 self.cmd
                     .find(id)
                     // Find `arg`s which are exclusive but also appear with other args.
                     .filter(|&arg| arg.is_exclusive_set() && args_count > 1)
             })
-            .next()
             .map(|arg| {
                 // Throw an error for the first conflict found.
                 Err(Error::argument_conflict(
@@ -159,8 +132,7 @@ impl<'cmd> Validator<'cmd> {
         }
 
         debug!("Validator::build_conflict_err: name={name:?}");
-        let mut seen = FlatSet::new();
-        let conflicts = conflict_ids
+        let conflict_ids = conflict_ids
             .iter()
             .flat_map(|c_id| {
                 if self.cmd.find_group(c_id).is_some() {
@@ -169,16 +141,18 @@ impl<'cmd> Validator<'cmd> {
                     vec![c_id.clone()]
                 }
             })
-            .filter_map(|c_id| {
-                seen.insert(c_id.clone()).then(|| {
-                    let c_arg = self.cmd.find(&c_id).expect(INTERNAL_ERROR_MSG);
-                    c_arg.to_string()
-                })
+            .collect::<FlatSet<_>>()
+            .into_vec();
+        let conflicts = conflict_ids
+            .iter()
+            .map(|c_id| {
+                let c_arg = self.cmd.find(c_id).expect(INTERNAL_ERROR_MSG);
+                c_arg.to_string()
             })
             .collect();
 
         let former_arg = self.cmd.find(name).expect(INTERNAL_ERROR_MSG);
-        let usg = self.build_conflict_err_usage(matcher, conflict_ids);
+        let usg = self.build_conflict_err_usage(matcher, &conflict_ids);
         Err(Error::argument_conflict(
             self.cmd,
             former_arg.to_string(),
@@ -336,7 +310,7 @@ impl<'cmd> Validator<'cmd> {
                 required = true;
             }
 
-            if required {
+            if !is_exclusive_present && required {
                 missing_required.push(a.get_id().clone());
                 if !a.is_last_set() {
                     highest_index = highest_index.max(a.get_index().unwrap_or(0));

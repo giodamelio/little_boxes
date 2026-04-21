@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use clap::error::{Error, ErrorKind};
 use clap::{ArgMatches, Args as _, Command, FromArgMatches, Parser, Subcommand};
 
@@ -41,7 +42,7 @@ impl FromArgMatches for CliSub {
                 return Err(Error::raw(
                     ErrorKind::InvalidSubcommand,
                     "Valid subcommands are `add` and `remove`",
-                ))
+                ));
             }
             None => (),
         };

@@ -8,20 +8,20 @@ use std::process;
 
 fn run() -> Result<(), Box<dyn Error>> {
     if let Ok(text) = env::var("stdout") {
-        println!("{}", text);
+        println!("{text}");
     }
     if let Ok(text) = env::var("stderr") {
-        eprintln!("{}", text);
+        eprintln!("{text}");
     }
 
     if env::var("echo_large").as_deref() == Ok("1") {
         for i in 0..(128 * 1024) {
-            println!("{}", i);
+            println!("{i}");
         }
     }
 
     if env::var("echo_cwd").as_deref() == Ok("1") {
-        if let Ok(cwd) = std::env::current_dir() {
+        if let Ok(cwd) = env::current_dir() {
             eprintln!("{}", cwd.display());
         }
     }
@@ -33,7 +33,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     if let Ok(path) = env::var("cat") {
         let text = std::fs::read_to_string(path).unwrap();
-        eprintln!("{}", text);
+        eprintln!("{text}");
     }
 
     if let Some(timeout) = env::var("sleep").ok().and_then(|s| s.parse().ok()) {
@@ -53,7 +53,7 @@ fn main() {
     let code = match run() {
         Ok(_) => 0,
         Err(ref e) => {
-            write!(&mut io::stderr(), "{}", e).expect("writing to stderr won't fail");
+            write!(&mut io::stderr(), "{e}").expect("writing to stderr won't fail");
             1
         }
     };

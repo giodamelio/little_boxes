@@ -1,3 +1,4 @@
+/// Origin of a snapshot so it can be updated
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DataSource {
     pub(crate) inner: DataSourceInner,
@@ -62,76 +63,30 @@ impl From<Inline> for DataSource {
 impl std::fmt::Display for DataSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.inner {
-            DataSourceInner::Path(value) => crate::path::display_relpath(value).fmt(f),
+            DataSourceInner::Path(value) => crate::dir::display_relpath(value).fmt(f),
             DataSourceInner::Inline(value) => value.fmt(f),
         }
     }
 }
 
-/// Data from within Rust source code
+/// Output of [`str!`][crate::str!]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Inline {
     #[doc(hidden)]
     pub position: Position,
     #[doc(hidden)]
     pub data: &'static str,
-    #[doc(hidden)]
-    pub indent: bool,
 }
 
 impl Inline {
-    /// Indent to quote-level when overwriting the string literal (default)
-    pub fn indent(mut self, yes: bool) -> Self {
-        self.indent = yes;
-        self
-    }
-
-    /// Initialize `Self` as [`format`][crate::data::DataFormat] or [`Error`][crate::data::DataFormat::Error]
-    ///
-    /// This is generally used for `expected` data
-    pub fn is(self, format: super::DataFormat) -> super::Data {
-        let data: super::Data = self.into();
-        data.is(format)
-    }
-
-    /// Deprecated, replaced with [`Inline::is`]
-    #[deprecated(since = "0.5.2", note = "Replaced with `Inline::is`")]
-    pub fn coerce_to(self, format: super::DataFormat) -> super::Data {
-        let data: super::Data = self.into();
-        data.coerce_to(format)
-    }
-
-    fn trimmed(&self) -> String {
+    pub(crate) fn trimmed(&self) -> String {
         let mut data = self.data;
         if data.contains('\n') {
-            if data.starts_with('\n') {
-                data = &data[1..]
-            }
-            if self.indent {
-                return trim_indent(data);
-            }
+            data = data.strip_prefix('\n').unwrap_or(data);
+            data = data.strip_suffix('\n').unwrap_or(data);
         }
         data.to_owned()
     }
-}
-
-fn trim_indent(text: &str) -> String {
-    let indent = text
-        .lines()
-        .filter(|it| !it.trim().is_empty())
-        .map(|it| it.len() - it.trim_start().len())
-        .min()
-        .unwrap_or(0);
-
-    crate::utils::LinesWithTerminator::new(text)
-        .map(|line| {
-            if line.len() <= indent {
-                line.trim_start_matches(' ')
-            } else {
-                &line[indent..]
-            }
-        })
-        .collect()
 }
 
 impl std::fmt::Display for Inline {
@@ -140,14 +95,8 @@ impl std::fmt::Display for Inline {
     }
 }
 
-impl From<Inline> for super::Data {
-    fn from(inline: Inline) -> Self {
-        let trimmed = inline.trimmed();
-        super::Data::text(trimmed).with_source(inline)
-    }
-}
-
 /// Position within Rust source code, see [`Inline`]
+#[doc(hidden)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Position {
     #[doc(hidden)]
@@ -160,6 +109,12 @@ pub struct Position {
 
 impl std::fmt::Display for Position {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}:{}", self.file.display(), self.line, self.column)
+        write!(
+            f,
+            "{}:{}:{}",
+            crate::dir::display_relpath(&self.file),
+            self.line,
+            self.column
+        )
     }
 }

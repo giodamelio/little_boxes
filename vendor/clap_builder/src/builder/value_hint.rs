@@ -2,25 +2,25 @@ use std::str::FromStr;
 
 /// Provide shell with hint on how to complete an argument.
 ///
-/// See [Arg::value_hint][crate::Arg::value_hint] to set this on an argument.
+/// See [`Arg::value_hint`][crate::Arg::value_hint] to set this on an argument.
 ///
 /// See the `clap_complete` crate for completion script generation.
 ///
 /// Overview of which hints are supported by which shell:
 ///
-/// | Hint                   | zsh | fish[^1]|
-/// | ---------------------- | --- | ------- |
-/// | `AnyPath`              | Yes | Yes     |
-/// | `FilePath`             | Yes | Yes     |
-/// | `DirPath`              | Yes | Yes     |
-/// | `ExecutablePath`       | Yes | Partial |
-/// | `CommandName`          | Yes | Yes     |
-/// | `CommandString`        | Yes | Partial |
-/// | `CommandWithArguments` | Yes |         |
-/// | `Username`             | Yes | Yes     |
-/// | `Hostname`             | Yes | Yes     |
-/// | `Url`                  | Yes |         |
-/// | `EmailAddress`         | Yes |         |
+/// | Hint                   | zsh | fish[^1] | dynamic |
+/// | ---------------------- | --- | ---------|---------|
+/// | `AnyPath`              | Yes | Yes      | Yes     |
+/// | `FilePath`             | Yes | Yes      | Yes     |
+/// | `DirPath`              | Yes | Yes      | Yes     |
+/// | `ExecutablePath`       | Yes | Partial  | Yes     |
+/// | `CommandName`          | Yes | Yes      | No      |
+/// | `CommandString`        | Yes | Partial  | No      |
+/// | `CommandWithArguments` | Yes |          | No      |
+/// | `Username`             | Yes | Yes      | No      |
+/// | `Hostname`             | Yes | Yes      | No      |
+/// | `Url`                  | Yes |          | No      |
+/// | `EmailAddress`         | Yes |          | No      |
 ///
 /// [^1]: fish completions currently only support named arguments (e.g. -o or --opt), not
 ///       positional arguments.
@@ -46,7 +46,7 @@ pub enum ValueHint {
     /// A single string containing a command and its arguments.
     CommandString,
     /// Capture the remaining arguments as a command name and arguments for that command. This is
-    /// common when writing shell wrappers that execute anther command, for example `sudo` or `env`.
+    /// common when writing shell wrappers that execute another command, for example `sudo` or `env`.
     ///
     /// This hint is special, the argument must be a positional argument and have
     /// [`.num_args(1..)`] and Command must use [`Command::trailing_var_arg(true)`]. The result is that the
@@ -66,6 +66,9 @@ pub enum ValueHint {
     /// Email address.
     EmailAddress,
 }
+
+#[cfg(feature = "unstable-ext")]
+impl crate::builder::ArgExt for ValueHint {}
 
 impl FromStr for ValueHint {
     type Err = String;

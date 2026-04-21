@@ -11,15 +11,21 @@
 
 [package]
 edition = "2018"
-rust-version = "1.41"
+rust-version = "1.60"
 name = "similar"
-version = "2.4.0"
+version = "2.7.0"
 authors = [
     "Armin Ronacher <armin.ronacher@active-4.com>",
     "Pierre-Étienne Meunier <pe@pijul.org>",
     "Brandon Williams <bwilliams.eng@gmail.com>",
 ]
+build = false
 exclude = ["assets/*"]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "A diff library for Rust"
 readme = "README.md"
 keywords = [
@@ -38,53 +44,69 @@ all-features = true
 [profile.release]
 debug = 2
 
-[[example]]
-name = "patience"
-required-features = [
-    "text",
-    "inline",
-]
-
-[[example]]
-name = "terminal"
-required-features = ["text"]
-
-[[example]]
-name = "terminal-inline"
-required-features = [
-    "text",
-    "inline",
-    "bytes",
-]
-
-[[example]]
-name = "original-slices"
-required-features = ["text"]
-
-[[example]]
-name = "udiff"
-required-features = [
-    "text",
-    "bytes",
-]
+[lib]
+name = "similar"
+path = "src/lib.rs"
 
 [[example]]
 name = "close-matches"
+path = "examples/close-matches.rs"
 required-features = ["text"]
 
 [[example]]
 name = "large"
+path = "examples/large.rs"
 required-features = ["text"]
 
 [[example]]
+name = "nonstring"
+path = "examples/nonstring.rs"
+
+[[example]]
+name = "original-slices"
+path = "examples/original-slices.rs"
+required-features = ["text"]
+
+[[example]]
+name = "patience"
+path = "examples/patience.rs"
+required-features = [
+    "text",
+    "inline",
+]
+
+[[example]]
 name = "serde"
+path = "examples/serde.rs"
 required-features = [
     "text",
     "serde",
 ]
 
+[[example]]
+name = "terminal"
+path = "examples/terminal.rs"
+required-features = ["text"]
+
+[[example]]
+name = "terminal-inline"
+path = "examples/terminal-inline.rs"
+required-features = [
+    "text",
+    "inline",
+    "bytes",
+]
+
+[[example]]
+name = "udiff"
+path = "examples/udiff.rs"
+required-features = [
+    "text",
+    "bytes",
+]
+
 [dependencies.bstr]
-version = "0.2.14"
+version = "1.5.0"
 optional = true
 default-features = false
 
@@ -95,6 +117,10 @@ optional = true
 
 [dependencies.unicode-segmentation]
 version = "1.7.1"
+optional = true
+
+[dependencies.web-time]
+version = "1.1"
 optional = true
 
 [dev-dependencies.console]
@@ -117,5 +143,7 @@ text = []
 unicode = [
     "text",
     "unicode-segmentation",
-    "bstr/unicode",
+    "bstr?/unicode",
+    "bstr?/std",
 ]
+wasm32_web_time = ["web-time"]

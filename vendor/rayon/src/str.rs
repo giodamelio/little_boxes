@@ -1,4 +1,4 @@
-//! Parallel iterator types for [strings][std::str]
+//! Parallel iterator types for [strings]
 //!
 //! You will rarely need to interact with this module directly unless you need
 //! to name one of the iterator types.
@@ -9,10 +9,8 @@
 //! It is implemented for `char`, `&[char]`, `[char; N]`, `&[char; N]`,
 //! and any function or closure `F: Fn(char) -> bool + Sync + Send`.
 //!
-//! [`ParallelString::par_split()`]: trait.ParallelString.html#method.par_split
-//! [`par_split_terminator()`]: trait.ParallelString.html#method.par_split_terminator
-//!
-//! [std::str]: https://doc.rust-lang.org/stable/std/str/
+//! [`par_split_terminator()`]: ParallelString::par_split_terminator()
+//! [strings]: std::str
 
 use crate::iter::plumbing::*;
 use crate::iter::*;
@@ -34,6 +32,7 @@ fn find_char_midpoint(chars: &str) -> usize {
     // We want to split near the midpoint, but we need to find an actual
     // character boundary.  So we look at the raw bytes, first scanning
     // forward from the midpoint for a boundary, then trying backward.
+    // TODO (MSRV 1.91): use `str::ceil_char_boundary`, else `floor_...`.
     let (left, right) = chars.as_bytes().split_at(mid);
     match right.iter().copied().position(is_char_boundary) {
         Some(i) => mid + i,
@@ -450,15 +449,12 @@ impl Pattern for &[char] {
     impl_pattern!(&self => *self);
 }
 
-// TODO (MSRV 1.75): use `*self` for array patterns too.
-// - Needs `DoubleEndedSearcher` so `split.next_back()` works.
-
 impl<const N: usize> Pattern for [char; N] {
-    impl_pattern!(&self => self.as_slice());
+    impl_pattern!(&self => *self);
 }
 
 impl<const N: usize> Pattern for &[char; N] {
-    impl_pattern!(&self => self.as_slice());
+    impl_pattern!(&self => *self);
 }
 
 impl<FN: Sync + Send + Fn(char) -> bool> Pattern for FN {
@@ -681,7 +677,7 @@ impl<'ch, P: Pattern> ParallelIterator for Split<'ch, P> {
 }
 
 /// Implement support for `SplitProducer`.
-impl<'ch, P: Pattern> Fissile<P> for &'ch str {
+impl<P: Pattern> Fissile<P> for &str {
     fn length(&self) -> usize {
         self.len()
     }
