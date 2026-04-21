@@ -99,6 +99,21 @@
               rust-analyzer # LSP Server
               clippy # Linter
               lefthook # Git hook manager
+
+              # Temporarily disable vendored sources to run `cargo upgrade`, then re-vendor.
+              (pkgs.writeShellApplication {
+                name = "cargo-upgrade-vendored";
+                runtimeInputs = with pkgs; [cargo cargo-edit];
+                text = ''
+                  set -euo pipefail
+                  trap 'mv .cargo/config.toml.bak .cargo/config.toml 2>/dev/null || true' EXIT
+                  mv .cargo/config.toml .cargo/config.toml.bak
+                  cargo upgrade "$@"
+                  mv .cargo/config.toml.bak .cargo/config.toml
+                  trap - EXIT
+                  cargo vendor --locked vendor >/dev/null
+                '';
+              })
             ];
 
             shellHook = ''
