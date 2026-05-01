@@ -1,0 +1,52 @@
+name: Run Hooks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  detect-hooks:
+    name: Detect Prek Hooks
+    runs-on: ubuntu-latest
+    outputs:
+      hooks: ${{ steps.list-hooks.outputs.hooks }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4.3.1
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@92148bb48b9a0c5458c53dd0b368fbfbfbaa3210 #main
+
+      - name: Setup Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@b4a9864e3a8ab8179be30f2e70fd71fe9996bb9d #main
+        with:
+          use-flakehub: false
+
+      - name: List hooks
+        id: list-hooks
+        run: |
+          nix develop -c sh -c 'prek list --output-format=json > /tmp/hooks.json'
+          hooks=$(jq -c '[.[].full_id]' /tmp/hooks.json)
+          echo "hooks=$hooks" >> "$GITHUB_OUTPUT"
+
+  run-hooks:
+    needs: detect-hooks
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        hook: ${{ fromJson(needs.detect-hooks.outputs.hooks) }}
+    name: Run ${{ matrix.hook }} hook
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4.3.1
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@92148bb48b9a0c5458c53dd0b368fbfbfbaa3210 #main
+
+      - name: Setup Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@b4a9864e3a8ab8179be30f2e70fd71fe9996bb9d #main
+        with:
+          use-flakehub: false
+
+      - name: Run ${{ matrix.hook }}
+        run: nix develop -c prek run ${{ matrix.hook }} --all-files

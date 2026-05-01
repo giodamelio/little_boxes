@@ -4,14 +4,14 @@ on: [push, pull_request]
 jobs:
   build:
     name: Build Nix targets
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 #v3.6.0
       - name: Check Nix flake inputs
-        uses: DeterminateSystems/flake-checker-action@v4
+        uses: DeterminateSystems/flake-checker-action@3164002371bc90729c68af0e24d5aacf20d7c9f6 #v12
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v3
-      - uses: cachix/cachix-action@v12
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 #v22
+      - uses: cachix/cachix-action@1eb2ef646ac0255473d23a5907ad7b04ce94065c #v17
         with:
           name: giodamelio
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
