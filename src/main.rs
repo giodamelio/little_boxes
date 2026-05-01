@@ -4,7 +4,7 @@ use std::io::{self, BufReader};
 use std::path::PathBuf;
 use std::process;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::ArgMatches;
 
 mod cli;
@@ -12,7 +12,7 @@ use self::cli::cli;
 mod draw_box;
 use self::draw_box::{DrawBox, SimpleBox, TitleBox};
 mod charset;
-use self::charset::{get_charset, Charset};
+use self::charset::{Charset, get_charset};
 
 fn get_input(matches: &ArgMatches) -> Result<Vec<String>> {
     if let Some(file_path) = matches.get_one::<PathBuf>("file") {

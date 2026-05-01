@@ -143,6 +143,7 @@
           programs = {
             # Rust
             rustfmt = {
+            rustfmt.enable = true;
               enable = true;
               edition = "2021";
             };

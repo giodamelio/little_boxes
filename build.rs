@@ -4,7 +4,7 @@ use std::io::{ErrorKind, Result};
 use std::path::PathBuf;
 
 use clap::ValueEnum;
-use clap_complete::{generate_to, Shell};
+use clap_complete::{Shell, generate_to};
 
 // This is a bit of a hack to not have to rewrite the cli in the build
 #[path = "src/cli.rs"]
