@@ -124,6 +124,7 @@
           # Don't mess with our vendored dependencies
           settings = {
             excludes = ["vendor/**"];
+            formatter.yamllint.options = pkgs.lib.mkAfter ["--strict"];
           };
           programs = {
             # Rust
@@ -131,6 +132,10 @@
 
             # Nix
             alejandra.enable = true;
+
+            # Yaml
+            yamlfmt.enable = true;
+            yamllint.enable = true;
           };
         };
       };

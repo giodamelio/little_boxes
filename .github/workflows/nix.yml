@@ -1,6 +1,5 @@
 name: Nix
 on: [push, pull_request]
-
 jobs:
   build:
     name: Build Nix targets

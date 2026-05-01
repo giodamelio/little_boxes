@@ -8,20 +8,20 @@ jobs:
       matrix:
         rust_version: [stable, beta, nightly]
     steps:
-    - uses: actions/checkout@61b9e3751b92087fd0b06925ba6dd6314e06f089 #master
-    - name: Set Rust version
-      run: rustup default ${{ matrix.rust_version }}
-    - name: Install Clippy and Rustfmt
-      run: |
-        rustup component add clippy
-        rustup component add rustfmt
-    - name: Format
-      run: cargo fmt -- --check
-    - name: Lint
-      run: cargo clippy
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
-    - name: Actually run the thing!
-      run: ls -l | cargo run -- --title "Little boxes on the hillside"
+      - uses: actions/checkout@61b9e3751b92087fd0b06925ba6dd6314e06f089 #master
+      - name: Set Rust version
+        run: rustup default ${{ matrix.rust_version }}
+      - name: Install Clippy and Rustfmt
+        run: |
+          rustup component add clippy
+          rustup component add rustfmt
+      - name: Format
+        run: cargo fmt -- --check
+      - name: Lint
+        run: cargo clippy
+      - name: Build
+        run: cargo build --verbose
+      - name: Run tests
+        run: cargo test --verbose
+      - name: Actually run the thing!
+        run: ls -l | cargo run -- --title "Little boxes on the hillside"
