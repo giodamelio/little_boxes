@@ -3,10 +3,6 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    fenix = {
-      url = "github:nix-community/fenix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -18,7 +14,6 @@
   };
   outputs = inputs @ {
     flake-parts,
-    fenix,
     git-hooks,
     ...
   }:
@@ -33,17 +28,11 @@
         config,
         system,
         ...
-      }: let
-        rustToolchain = fenix.packages.${system}.stable;
-        rustPlatform = pkgs.makeRustPlatform {
-          rustc = rustToolchain;
-          cargo = rustToolchain;
-        };
-      in {
+      }: {
         packages.default = let
           manifest = (pkgs.lib.importTOML ./Cargo.toml).package;
         in
-          rustPlatform.buildRustPackage {
+          pkgs.rustPlatform.buildRustPackage {
             pname = manifest.name;
             version = manifest.version;
             src = pkgs.lib.cleanSource ./.;
@@ -95,7 +84,13 @@
                 # Include the `treefmt` command and the wrapped programs
                 config.treefmt.build.wrapper
 
-                rustToolchain.defaultToolchain
+                # Rust toolchain from nixpkgs
+                rustc
+                cargo
+                clippy
+                rust-analyzer
+                rustfmt
+
                 cargo-edit
                 prek
 
