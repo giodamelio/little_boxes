@@ -92,7 +92,7 @@
           pkgs.mkShell {
             nativeBuildInputs = with pkgs;
               [
-                # Include the `treefmt` command
+                # Include the `treefmt` command and the wrapped programs
                 config.treefmt.build.wrapper
 
                 rustToolchain.defaultToolchain
@@ -114,7 +114,9 @@
                   '';
                 })
               ]
-              ++ hooks.enabledPackages;
+              # Include all the wrapped programs from the Treefmt and Git hooks configs
+              ++ hooks.enabledPackages
+              ++ (lib.attrValues config.treefmt.build.programs);
 
             shellHook = ''
               ${hooks.shellHook}
