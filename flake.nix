@@ -11,15 +11,15 @@
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nixago = {
-      url = "github:nix-community/nixago";
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
   outputs = inputs @ {
     flake-parts,
     fenix,
-    nixago,
+    git-hooks,
     ...
   }:
     flake-parts.lib.mkFlake {inherit inputs;} {
@@ -69,70 +69,57 @@
           };
 
         devShells.default = let
-          lefthookConfig = nixago.lib.${system}.make {
-            data = {
-              pre-commit = {
-                commands = {
-                  format = {
-                    run = "treefmt --fail-on-change";
-                  };
-                  check = {
-                    run = "cargo check";
-                  };
-                  clippy = {
-                    run = "cargo clippy -- -D warnings";
-                  };
-                };
+          hooks = git-hooks.lib.${system}.run {
+            src = ./.;
+            package = pkgs.prek;
+            hooks = {
+              cargo-check.enable = true;
+              rustfmt.enable = true;
+              clippy = {
+                enable = true;
+                entry = "cargo clippy -- -D warnings";
+                pass_filenames = false;
               };
-              pre-push = {
-                commands = {
-                  test = {
-                    run = "cargo test";
-                  };
-                  check-flake = {
-                    run = "nix flake check";
-                  };
-                };
+              cargo-test = {
+                enable = true;
+                name = "cargo-test";
+                entry = "cargo test";
+                pass_filenames = false;
               };
             };
-            output = "lefthook.yaml";
-            format = "yaml";
           };
         in
           pkgs.mkShell {
-            nativeBuildInputs = with pkgs; [
-              # Include the `treefmt` command
-              config.treefmt.build.wrapper
+            nativeBuildInputs = with pkgs;
+              [
+                # Include the `treefmt` command
+                config.treefmt.build.wrapper
 
-              rustToolchain.defaultToolchain
-              cargo-edit
-              lefthook # Git hook manager
+                rustToolchain.defaultToolchain
+                cargo-edit
+                prek
 
-              # Temporarily disable vendored sources to run `cargo upgrade`, then re-vendor.
-              (pkgs.writeShellApplication {
-                name = "cargo-upgrade-vendored";
-                runtimeInputs = with pkgs; [cargo cargo-edit];
-                text = ''
-                  set -euo pipefail
-                  trap 'mv .cargo/config.toml.bak .cargo/config.toml 2>/dev/null || true' EXIT
-                  mv .cargo/config.toml .cargo/config.toml.bak
-                  cargo upgrade "$@"
-                  mv .cargo/config.toml.bak .cargo/config.toml
-                  trap - EXIT
-                  cargo vendor --locked vendor >/dev/null
-                '';
-              })
-            ];
+                # Temporarily disable vendored sources to run `cargo upgrade`, then re-vendor.
+                (pkgs.writeShellApplication {
+                  name = "cargo-upgrade-vendored";
+                  runtimeInputs = with pkgs; [cargo cargo-edit];
+                  text = ''
+                    set -euo pipefail
+                    trap 'mv .cargo/config.toml.bak .cargo/config.toml 2>/dev/null || true' EXIT
+                    mv .cargo/config.toml .cargo/config.toml.bak
+                    cargo upgrade "$@"
+                    mv .cargo/config.toml.bak .cargo/config.toml
+                    trap - EXIT
+                    cargo vendor --locked vendor >/dev/null
+                  '';
+                })
+              ]
+              ++ hooks.enabledPackages;
 
             shellHook = ''
-              ${lefthookConfig.shellHook}
-              ${pkgs.lefthook}/bin/lefthook install
+              ${hooks.shellHook}
             '';
           };
-
-        checks = {
-          #testing = "ls";
-        };
 
         treefmt = {
           projectRootFile = "flake.nix";
@@ -142,11 +129,7 @@
           };
           programs = {
             # Rust
-            rustfmt = {
             rustfmt.enable = true;
-              enable = true;
-              edition = "2021";
-            };
 
             # Nix
             alejandra.enable = true;

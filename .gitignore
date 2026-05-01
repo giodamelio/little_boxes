@@ -2,5 +2,4 @@ target
 tmp
 result
 
-# nixago: ignore-linked-files
-/lefthook.yaml
+.pre-commit-config.yaml
