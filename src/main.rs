@@ -4,7 +4,7 @@ use std::io::{self, BufReader};
 use std::path::PathBuf;
 use std::process;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::ArgMatches;
 
 mod cli;
@@ -15,20 +15,33 @@ mod charset;
 use self::charset::{get_charset, Charset};
 
 fn get_input(matches: &ArgMatches) -> Result<Vec<String>> {
-    let input: Result<Vec<String>, io::Error> = match matches.get_one::<PathBuf>("file") {
-        Some(file_path) => {
-            let file = File::open(file_path)
-                .with_context(|| format!("Failed to open file {:?}", file_path))?;
-            let reader = BufReader::new(file);
-            reader.lines().collect()
-        }
-        None => {
-            let stdin = io::stdin();
-            stdin.lock().lines().collect()
-        }
-    };
+    if let Some(file_path) = matches.get_one::<PathBuf>("file") {
+        let file = File::open(file_path).map_err(|e| match e.kind() {
+            io::ErrorKind::NotFound => {
+                anyhow!("File {:?} does not exist", file_path)
+            }
+            _ => anyhow::Error::new(e).context(format!("Failed to open {:?}", file_path)),
+        })?;
 
-    input.with_context(|| "Failed to get input")
+        let metadata = file
+            .metadata()
+            .with_context(|| format!("Failed to stat {:?}", file_path))?;
+
+        if metadata.is_dir() {
+            anyhow::bail!("{:?} is a directory, it must be a file", file_path);
+        }
+
+        BufReader::new(file)
+            .lines()
+            .collect::<io::Result<Vec<_>>>()
+            .with_context(|| format!("Failed to read {:?}", file_path))
+    } else {
+        io::stdin()
+            .lock()
+            .lines()
+            .collect::<io::Result<Vec<_>>>()
+            .context("Failed to read stdin")
+    }
 }
 
 fn run() -> Result<()> {

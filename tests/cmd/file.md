@@ -9,7 +9,7 @@ $ little_boxes --file ./hello.txt
 ```console
 $ little_boxes --file ./does_not_exist.txt
 ? 1
-Error: Failed to open file "./does_not_exist.txt"
+Error: File "./does_not_exist.txt" does not exist
 
 ```
 
@@ -17,6 +17,13 @@ Error: Failed to open file "./does_not_exist.txt"
 $ little_boxes --file /dev/null
 ┏━━┓
 ┗━━┛
+
+```
+
+```console
+$ little_boxes --file ./empty_dir
+? 1
+Error: "./empty_dir" is a directory, it must be a file
 
 ```
 
