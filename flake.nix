@@ -38,14 +38,16 @@
             src = pkgs.lib.cleanSource ./.;
             cargoVendorDir = "vendor";
 
-            # Install the manpage
-            postBuild = ''
-              export manfilepath=$(find target/ -type f -wholename "*out/little_boxes.1" | head -n 1)
-              mv $manfilepath .
-            '';
+            nativeBuildInputs = [pkgs.installShellFiles];
+
             postInstall = ''
-              mkdir -p $out/share/man/man1
-              cp little_boxes.1 $out/share/man/man1/
+              # Find the OUT_DIR where build.rs wrote manpages and completions
+              outDir=$(find target/ -type d -name out -path '*/build/little_boxes-*' | head -n1)
+              installManPage "$outDir/little_boxes.1"
+              installShellCompletion --bash "$outDir/little_boxes.bash"
+              installShellCompletion --zsh "$outDir/_little_boxes"
+              installShellCompletion --fish "$outDir/little_boxes.fish"
+              installShellCompletion --nushell "$outDir/little_boxes.nu"
             '';
 
             meta = with pkgs.lib; {
@@ -53,7 +55,6 @@
               homepage = manifest.homepage;
               license = licenses.mit;
               maintainers = [maintainers.giodamelio];
-              manpages = ["man/man1/little_boxes.1"];
             };
           };
 

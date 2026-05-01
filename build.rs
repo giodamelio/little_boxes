@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use clap::ValueEnum;
 use clap_complete::{Shell, generate_to};
+use clap_complete_nushell::Nushell;
 
 // This is a bit of a hack to not have to rewrite the cli in the build
 #[path = "src/cli.rs"]
@@ -32,6 +33,7 @@ fn main() -> Result<()> {
     for &shell in Shell::value_variants() {
         generate_to(shell, &mut cmd, "little_boxes", out_dir.clone())?;
     }
+    generate_to(Nushell, &mut cmd, "little_boxes", out_dir.clone())?;
 
     Ok(())
 }
