@@ -135,10 +135,10 @@
         };
 
         treefmt = {
-          projectRootFile = ./flake.nix;
+          projectRootFile = "flake.nix";
           # Don't mess with our vendored dependencies
           settings = {
-            global.excludes = ["./vendor/**"];
+            excludes = ["vendor/**"];
           };
           programs = {
             # Rust
