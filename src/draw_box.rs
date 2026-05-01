@@ -1,3 +1,5 @@
+use unicode_width::UnicodeWidthStr;
+
 use super::charset::Charset;
 
 pub trait DrawBox {
@@ -12,9 +14,14 @@ pub trait DrawBox {
     fn print_bottom(&self);
 }
 
-// Find the count of visible chars in a String
+// Count the display width of a string in terminal cells
+fn count_chars<T: Into<String>>(input: T) -> usize {
+    input.into().width()
+}
+
+// Find the display width of visible chars in a String (strips ANSI codes first)
 fn count_visible_chars(input: &str) -> usize {
-    strip_ansi_escapes::strip(input).len()
+    count_chars(strip_ansi_escapes::strip_str(input))
 }
 
 // A simple box around the content
@@ -25,9 +32,9 @@ pub struct SimpleBox {
 }
 
 fn calculate_max_length(mut content: Vec<String>) -> usize {
-    content.sort_unstable_by_key(|b| b.len());
+    content.sort_unstable_by_key(|b| count_chars(b.clone()));
     match content.last() {
-        Some(line) => line.len(),
+        Some(line) => count_chars(line.clone()),
         None => 0,
     }
 }
@@ -118,7 +125,7 @@ impl<'a> DrawBox for TitleBox<'a> {
             self.charset.t_right
         );
 
-        let title_length = self.title.len() + 5;
+        let title_length = count_chars(self.title) + 5;
         let num_pad: usize = match title_length.cmp(&self.max_length) {
             std::cmp::Ordering::Less => self.max_length + 2 - title_length,
             std::cmp::Ordering::Greater => 1,
@@ -136,7 +143,7 @@ impl<'a> DrawBox for TitleBox<'a> {
 
             // Pad shorter lines with spaces
             let length: usize = count_visible_chars(line);
-            let title_length = self.title.len() + 5;
+            let title_length = count_chars(self.title) + 5;
             let num_pad: usize = match title_length.cmp(&self.max_length) {
                 std::cmp::Ordering::Less => self.max_length - length,
                 std::cmp::Ordering::Greater => title_length - length - 1,
@@ -152,7 +159,7 @@ impl<'a> DrawBox for TitleBox<'a> {
 
     fn print_bottom(&self) {
         print!("{}", self.charset.corner_down_left);
-        let title_length = self.title.len() + 5;
+        let title_length = count_chars(self.title) + 5;
         let num_pad: usize = match title_length.cmp(&self.max_length) {
             std::cmp::Ordering::Less => self.max_length + 2,
             std::cmp::Ordering::Greater => title_length + 1,

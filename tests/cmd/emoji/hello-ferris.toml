@@ -1,0 +1,6 @@
+stdin = "🦀 Hello Ferris!"
+stdout = """
+┏━━━━━━━━━━━━━━━━━━┓
+┃ 🦀 Hello Ferris! ┃
+┗━━━━━━━━━━━━━━━━━━┛
+"""
