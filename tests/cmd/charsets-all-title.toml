@@ -1,0 +1,29 @@
+args = ["--all", "--title", "Hi"]
+stdin = "Hello World"
+stdout = """
+thick:
+┏━┫ Hi ┣━━━━━━┓
+┃ Hello World ┃
+┗━━━━━━━━━━━━━┛
+thin:
+┌─┤ Hi ├──────┐
+│ Hello World │
+└─────────────┘
+double:
+╔═╣ Hi ╠══════╗
+║ Hello World ║
+╚═════════════╝
+box:
+███ Hi ████████
+█ Hello World █
+███████████████
+rounded:
+╭─┤ Hi ├──────╮
+│ Hello World │
+╰─────────────╯
+dot:
+⣶⠶⢾ Hi ⡷⠶⠶⠶⠶⠶⠶⣶
+⣿ Hello World ⣿
+⠿⠶⠶⠶⠶⠶⠶⠶⠶⠶⠶⠶⠶⠶⠿
+"""
+

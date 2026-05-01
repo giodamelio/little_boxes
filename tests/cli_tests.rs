@@ -1,7 +1,8 @@
 #[test]
 fn cli_tests() {
     trycmd::TestCases::new()
-        .case("tests/cmd/*.md")
-        .case("tests/cmd/stdin.toml")
+        .default_bin_name("little_boxes")
+        .case("tests/cmd/**/*.md")
+        .case("tests/cmd/**/*.toml")
         .case("README.md");
 }

@@ -14,6 +14,13 @@ Error: Failed to open file "./does_not_exist.txt"
 ```
 
 ```console
+$ little_boxes --file /dev/null
+┏━━┓
+┗━━┛
+
+```
+
+```console
 $ little_boxes --file ./hello.txt --title "Hi"
 ┏━┫ Hi ┣━━━━━━━┓
 ┃ Hello World! ┃
