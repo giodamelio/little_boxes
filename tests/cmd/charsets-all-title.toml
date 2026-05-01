@@ -14,9 +14,9 @@ double:
 ║ Hello World ║
 ╚═════════════╝
 box:
-███ Hi ████████
+▄▄█ Hi █▄▄▄▄▄▄▄
 █ Hello World █
-███████████████
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 rounded:
 ╭─┤ Hi ├──────╮
 │ Hello World │

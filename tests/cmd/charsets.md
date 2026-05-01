@@ -24,9 +24,9 @@ $ little_boxes -f hello.txt -c double
 
 ```console
 $ little_boxes -f hello.txt -c box
-████████████████
+▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
 █ Hello World! █
-████████████████
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 
 ```
 

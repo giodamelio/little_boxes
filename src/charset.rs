@@ -1,5 +1,6 @@
 pub struct Charset {
-    pub horizontal: char,
+    pub horizontal_top: char,
+    pub horizontal_bottom: char,
     pub vertical: char,
     pub corner_up_left: char,
     pub corner_up_right: char,
@@ -12,7 +13,8 @@ pub struct Charset {
 pub fn get_charset(input: &str) -> Charset {
     match input {
         "thick" => Charset {
-            horizontal: '━',
+            horizontal_top: '━',
+            horizontal_bottom: '━',
             vertical: '┃',
             corner_up_left: '┏',
             corner_up_right: '┓',
@@ -22,7 +24,8 @@ pub fn get_charset(input: &str) -> Charset {
             t_left: '┫',
         },
         "thin" => Charset {
-            horizontal: '─',
+            horizontal_top: '─',
+            horizontal_bottom: '─',
             vertical: '│',
             corner_up_left: '┌',
             corner_up_right: '┐',
@@ -32,7 +35,8 @@ pub fn get_charset(input: &str) -> Charset {
             t_left: '┤',
         },
         "double" => Charset {
-            horizontal: '═',
+            horizontal_top: '═',
+            horizontal_bottom: '═',
             vertical: '║',
             corner_up_left: '╔',
             corner_up_right: '╗',
@@ -42,17 +46,19 @@ pub fn get_charset(input: &str) -> Charset {
             t_left: '╣',
         },
         "box" => Charset {
-            horizontal: '█',
+            horizontal_top: '▄',
+            horizontal_bottom: '▀',
             vertical: '█',
-            corner_up_left: '█',
-            corner_up_right: '█',
-            corner_down_left: '█',
-            corner_down_right: '█',
+            corner_up_left: '▄',
+            corner_up_right: '▄',
+            corner_down_left: '▀',
+            corner_down_right: '▀',
             t_right: '█',
             t_left: '█',
         },
         "rounded" => Charset {
-            horizontal: '─',
+            horizontal_top: '─',
+            horizontal_bottom: '─',
             vertical: '│',
             corner_up_left: '╭',
             corner_up_right: '╮',
@@ -62,7 +68,8 @@ pub fn get_charset(input: &str) -> Charset {
             t_left: '┤',
         },
         "dot" => Charset {
-            horizontal: '⠶',
+            horizontal_top: '⠶',
+            horizontal_bottom: '⠶',
             vertical: '⣿',
             corner_up_left: '⣶',
             corner_up_right: '⣶',

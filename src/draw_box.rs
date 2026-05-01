@@ -53,7 +53,7 @@ impl DrawBox for SimpleBox {
     fn print_top(&self) {
         print!("{}", self.charset.corner_up_left);
         for _ in 0..(self.max_length + 2) {
-            print!("{}", self.charset.horizontal)
+            print!("{}", self.charset.horizontal_top)
         }
         println!("{}", self.charset.corner_up_right);
     }
@@ -75,7 +75,7 @@ impl DrawBox for SimpleBox {
     fn print_bottom(&self) {
         print!("{}", self.charset.corner_down_left);
         for _ in 0..(self.max_length + 2) {
-            print!("{}", self.charset.horizontal)
+            print!("{}", self.charset.horizontal_bottom)
         }
         println!("{}", self.charset.corner_down_right);
     }
@@ -112,7 +112,7 @@ impl<'a> DrawBox for TitleBox<'a> {
         print!(
             "{}{}{} {} {}",
             self.charset.corner_up_left,
-            self.charset.horizontal,
+            self.charset.horizontal_top,
             self.charset.t_left,
             self.title,
             self.charset.t_right
@@ -125,7 +125,7 @@ impl<'a> DrawBox for TitleBox<'a> {
             std::cmp::Ordering::Equal => 2,
         };
         for _ in 0..num_pad {
-            print!("{}", self.charset.horizontal)
+            print!("{}", self.charset.horizontal_top)
         }
         println!("{}", self.charset.corner_up_right);
     }
@@ -159,7 +159,7 @@ impl<'a> DrawBox for TitleBox<'a> {
             std::cmp::Ordering::Equal => title_length + 2,
         };
         for _ in 0..num_pad {
-            print!("{}", self.charset.horizontal)
+            print!("{}", self.charset.horizontal_bottom)
         }
         println!("{}", self.charset.corner_down_right);
     }
