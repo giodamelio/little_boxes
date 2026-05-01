@@ -78,6 +78,17 @@ pub fn get_charset(input: &str) -> Charset {
             t_right: '⡷',
             t_left: '⢾',
         },
+        "ascii" => Charset {
+            horizontal_top: '-',
+            horizontal_bottom: '-',
+            vertical: '|',
+            corner_up_left: '+',
+            corner_up_right: '+',
+            corner_down_left: '+',
+            corner_down_right: '+',
+            t_right: '-',
+            t_left: '-',
+        },
         _ => panic!("Invalid charset name. This should not be possable!"),
     }
 }

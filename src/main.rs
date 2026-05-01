@@ -51,7 +51,7 @@ fn run() -> Result<()> {
 
     // Compare all the charsets
     if let Some(true) = matches.get_one::<bool>("all") {
-        let charsets = vec!["thick", "thin", "double", "box", "rounded", "dot"];
+        let charsets = vec!["thick", "thin", "double", "box", "rounded", "dot", "ascii"];
 
         for charset_name in charsets {
             let charset = get_charset(charset_name);

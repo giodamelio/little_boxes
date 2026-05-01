@@ -45,3 +45,11 @@ $ little_boxes -f hello.txt -c dot
 ⠿⠶⠶⠶⠶⠶⠶⠶⠶⠶⠶⠶⠶⠶⠶⠿
 
 ```
+
+```console
+$ little_boxes -f hello.txt -c ascii
++--------------+
+| Hello World! |
++--------------+
+
+```

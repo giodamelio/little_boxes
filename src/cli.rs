@@ -7,7 +7,7 @@ pub fn cli() -> Command {
         .arg(arg!(-t --title <TITLE> "Add a title to the box").required(false))
         .arg(
             arg!(-c --charset <CHARSET> "The charset to draw the box with")
-                .value_parser(["thick", "thin", "double", "box", "rounded", "dot"])
+                .value_parser(["thick", "thin", "double", "box", "rounded", "dot", "ascii"])
                 .default_value("thick"),
         )
         .arg(
