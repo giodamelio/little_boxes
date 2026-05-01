@@ -76,6 +76,14 @@
                 entry = "cargo test";
                 pass_filenames = false;
               };
+              actionlint = {
+                enable = true;
+                name = "actionlint";
+                entry = "${pkgs.actionlint}/bin/actionlint";
+                files = "^\\.github/workflows/";
+                types = ["yaml"];
+                pass_filenames = false;
+              };
             };
           };
         in

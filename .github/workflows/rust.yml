@@ -24,4 +24,4 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
       - name: Actually run the thing!
-        run: ls -l | cargo run -- --title "Little boxes on the hillside"
+        run: find . -maxdepth 1 | cargo run -- --title "Little boxes on the hillside"

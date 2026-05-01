@@ -17,4 +17,4 @@ jobs:
       - name: Build default package
         run: nix build
       - name: Actually run the thing!
-        run: ls -l | nix run
+        run: find . -maxdepth 1 | nix run
