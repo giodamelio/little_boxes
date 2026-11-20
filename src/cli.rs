@@ -4,7 +4,11 @@ use clap::{Command, arg, command, value_parser};
 
 pub fn cli() -> Command {
     command!()
-        .arg(arg!(-t --title <TITLE> "Add a title to the box").required(false))
+        .arg(
+            arg!(-t --title <TITLE> "Add a title to the box")
+                .required(false)
+                .value_parser(parse_title),
+        )
         .arg(
             arg!(-c --charset <CHARSET> "The charset to draw the box with")
                 .value_parser(["thick", "thin", "double", "box", "rounded", "dot", "ascii"])
@@ -24,6 +28,14 @@ pub fn cli() -> Command {
                 .value_parser(["auto", "always", "never"])
                 .default_value("auto"),
         )
+}
+
+// The title is drawn inside the top border, so a line break would split the border in two
+pub fn parse_title(title: &str) -> Result<String, String> {
+    if title.contains(['\n', '\r']) {
+        return Err("the title must be a single line; remove its line breaks".to_string());
+    }
+    Ok(title.to_string())
 }
 
 const NAMED_COLORS: [&str; 8] = [
@@ -70,6 +82,25 @@ pub fn parse_border_color(spec: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_title_accepts_single_line() {
+        assert_eq!(parse_title("hello"), Ok("hello".to_string()));
+        assert_eq!(parse_title(""), Ok("".to_string()));
+        assert_eq!(
+            parse_title("\u{1b}[31mred\u{1b}[0m\tafter tab"),
+            Ok("\u{1b}[31mred\u{1b}[0m\tafter tab".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_title_rejects_line_breaks() {
+        let err = parse_title("a\nb").unwrap_err();
+        assert!(err.contains("single line"), "{}", err);
+        assert!(parse_title("a\rb").is_err());
+        assert!(parse_title("a\r\nb").is_err());
+        assert!(parse_title("title\n").is_err());
+    }
 
     #[test]
     fn test_parse_named_colors() {

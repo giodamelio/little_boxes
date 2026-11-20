@@ -1,0 +1,11 @@
+args = ["--title", "a\rb"]
+stdin = "x"
+status.code = 2
+stdout = ""
+# trycmd normalises the echoed \r in the captured stderr to \n
+stderr = """
+error: invalid value 'a
+b' for '--title <TITLE>': the title must be a single line; remove its line breaks
+
+For more information, try '--help'.
+"""

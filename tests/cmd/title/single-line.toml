@@ -1,0 +1,7 @@
+args = ["--title", "Hello"]
+stdin = "x"
+stdout = """
+┏━┫ Hello ┣━┓
+┃ x         ┃
+┗━━━━━━━━━━━┛
+"""

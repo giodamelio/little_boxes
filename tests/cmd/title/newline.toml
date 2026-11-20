@@ -1,0 +1,10 @@
+args = ["--title", "a\nb"]
+stdin = "x"
+status.code = 2
+stdout = ""
+stderr = """
+error: invalid value 'a
+b' for '--title <TITLE>': the title must be a single line; remove its line breaks
+
+For more information, try '--help'.
+"""
