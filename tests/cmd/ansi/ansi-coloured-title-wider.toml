@@ -1,0 +1,7 @@
+args = ["--title", "\u001B[1;35mlong title here\u001B[0m"]
+stdin = "ab"
+stdout = """
+┏━┫ \u001B[1;35mlong title here\u001B[0m ┣━┓
+┃ ab                  ┃
+┗━━━━━━━━━━━━━━━━━━━━━┛
+"""

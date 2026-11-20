@@ -1,0 +1,7 @@
+stdin = "\u001B[1;36mcargo run\u001B[0m  \u001B[37mBuild and run\u001B[0m\nprek run   Run hooks\n"
+stdout = """
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ \u001B[1;36mcargo run\u001B[0m  \u001B[37mBuild and run\u001B[0m ┃
+┃ prek run   Run hooks     ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+"""
