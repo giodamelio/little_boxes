@@ -4,7 +4,6 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, BufReader, IsTerminal};
 use std::path::PathBuf;
-use std::process;
 
 use anyhow::{Context, Result, anyhow};
 use clap::ArgMatches;
@@ -76,14 +75,17 @@ fn run() -> Result<()> {
         .filter(|_| color)
         .map(String::as_str);
 
+    let mut out = io::stdout().lock();
+
     // Compare all the charsets
     if let Some(true) = matches.get_one::<bool>("all") {
         let charsets = vec!["thick", "thin", "double", "box", "rounded", "dot", "ascii"];
 
         for charset_name in charsets {
             let charset = get_charset(charset_name);
-            println!("{}:", charset_name);
+            writeln!(out, "{}:", charset_name).context("Failed to write to stdout")?;
             print_box(
+                &mut out,
                 input.clone(),
                 matches.get_one::<String>("title"),
                 charset,
@@ -91,11 +93,12 @@ fn run() -> Result<()> {
             )?;
         }
 
-        process::exit(0);
+        return Ok(());
     }
 
     // It is safe to .unwrap here because Clap's default will ensure that there is always a value
     print_box(
+        &mut out,
         input,
         matches.get_one::<String>("title"),
         get_charset(
@@ -108,6 +111,7 @@ fn run() -> Result<()> {
 }
 
 fn print_box(
+    out: &mut impl Write,
     content: Vec<String>,
     title: Option<&String>,
     charset: Charset,
@@ -115,13 +119,24 @@ fn print_box(
 ) -> Result<()> {
     DrawBox::new(content, title.map(String::as_str), charset)
         .border_sgr(border_sgr)
-        .render(&mut io::stdout().lock())
+        .render(out)
         .context("Failed to write to stdout")
+}
+
+fn is_broken_pipe(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<io::Error>()
+            .is_some_and(|e| e.kind() == io::ErrorKind::BrokenPipe)
+    })
 }
 
 fn main() {
     match run() {
         Ok(_) => (),
+        // Rust ignores SIGPIPE, so a reader like `head` closing early surfaces as EPIPE. Exit 0
+        // like ripgrep so `set -o pipefail` scripts piping into `head` keep working.
+        Err(err) if is_broken_pipe(&err) => (),
         Err(err) => {
             println!("Error: {}", err);
             std::process::exit(1);
