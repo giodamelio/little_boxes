@@ -1,0 +1,7 @@
+stdin = "a\tb\nabcdefgh\n"
+stdout = """
+┏━━━━━━━━━━━┓
+┃ a       b ┃
+┃ abcdefgh  ┃
+┗━━━━━━━━━━━┛
+"""

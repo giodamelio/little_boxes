@@ -1,12 +1,106 @@
+use std::borrow::Cow;
 use std::io::{self, Write};
 
 use unicode_width::UnicodeWidthStr;
+use vte::{Params, Parser, Perform};
 
 use super::charset::Charset;
+
+const TAB_WIDTH: usize = 8;
 
 // Find the display width of visible chars in a String (strips ANSI codes first)
 fn count_visible_chars(input: &str) -> usize {
     strip_ansi_escapes::strip_str(input).width()
+}
+
+// Uses the same vte parser as strip_ansi_escapes so the columns agree with count_visible_chars
+#[derive(Default)]
+struct TabStopTracker {
+    column_at_last_tab: usize,
+    // Measured as a whole string rather than per char so grapheme-aware widths match count_visible_chars
+    printed_since_last_tab: String,
+    // vte executes C0 bytes even mid-sequence; expanding a tab there would inject bytes into the escape
+    in_sequence: bool,
+    tab_pending: bool,
+}
+
+impl TabStopTracker {
+    fn column(&self) -> usize {
+        self.column_at_last_tab + self.printed_since_last_tab.width()
+    }
+}
+
+impl Perform for TabStopTracker {
+    fn print(&mut self, c: char) {
+        self.in_sequence = false;
+        self.printed_since_last_tab.push(c);
+    }
+
+    fn execute(&mut self, byte: u8) {
+        match byte {
+            b'\t' if !self.in_sequence => self.tab_pending = true,
+            // CAN and SUB abort any sequence in progress
+            0x18 | 0x1A => self.in_sequence = false,
+            _ => (),
+        }
+    }
+
+    fn unhook(&mut self) {
+        self.in_sequence = false;
+    }
+
+    fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {
+        self.in_sequence = false;
+    }
+
+    fn csi_dispatch(
+        &mut self,
+        _params: &Params,
+        _intermediates: &[u8],
+        _ignore: bool,
+        _action: char,
+    ) {
+        self.in_sequence = false;
+    }
+
+    fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {
+        self.in_sequence = false;
+    }
+}
+
+// Terminal tab stops depend on the screen column, which differs once the line sits inside a box,
+// so tabs become spaces counted from the start of the line, like expand(1)
+fn expand_tabs(input: &str) -> Cow<'_, str> {
+    if !input.contains('\t') {
+        return Cow::Borrowed(input);
+    }
+
+    let mut parser = Parser::new();
+    let mut tracker = TabStopTracker::default();
+    let mut expanded = String::with_capacity(input.len());
+    let mut copied_up_to = 0;
+
+    // One byte at a time so each tab vte reports can be tied back to its position in the input
+    for (index, byte) in input.bytes().enumerate() {
+        parser.advance(&mut tracker, &[byte]);
+        if byte == 0x1B {
+            tracker.in_sequence = true;
+        }
+
+        if tracker.tab_pending {
+            tracker.tab_pending = false;
+            expanded.push_str(&input[copied_up_to..index]);
+            let column = tracker.column();
+            let spaces = TAB_WIDTH - column % TAB_WIDTH;
+            expanded.extend(std::iter::repeat_n(' ', spaces));
+            tracker.column_at_last_tab = column + spaces;
+            tracker.printed_since_last_tab.clear();
+            copied_up_to = index + 1;
+        }
+    }
+    expanded.push_str(&input[copied_up_to..]);
+
+    Cow::Owned(expanded)
 }
 
 fn calculate_max_length(content: &[String]) -> usize {
@@ -26,7 +120,7 @@ fn repeat(out: &mut impl Write, c: char, count: usize) -> io::Result<()> {
 
 pub struct DrawBox<'a> {
     content: Vec<String>,
-    title: Option<&'a str>,
+    title: Option<Cow<'a, str>>,
     charset: Charset,
     // Visible width between the vertical borders, excluding the single space of margin on each side
     inner_width: usize,
@@ -34,9 +128,18 @@ pub struct DrawBox<'a> {
 
 impl<'a> DrawBox<'a> {
     pub fn new(content: Vec<String>, title: Option<&'a str>, charset: Charset) -> DrawBox<'a> {
+        let content: Vec<String> = content
+            .into_iter()
+            .map(|line| match expand_tabs(&line) {
+                Cow::Owned(expanded) => expanded,
+                Cow::Borrowed(_) => line,
+            })
+            .collect();
+        let title = title.map(expand_tabs);
+
         let content_width = calculate_max_length(&content);
         // A title needs four extra columns for the left corner, horizontal, its tees and its spacing
-        let inner_width = match title {
+        let inner_width = match &title {
             Some(title) => content_width.max(count_visible_chars(title) + 4),
             None => content_width,
         };
@@ -57,7 +160,7 @@ impl<'a> DrawBox<'a> {
 
     fn render_top(&self, out: &mut impl Write) -> io::Result<()> {
         write!(out, "{}", self.charset.corner_up_left)?;
-        match self.title {
+        match &self.title {
             Some(title) => {
                 write!(
                     out,
@@ -113,6 +216,83 @@ mod tests {
             3,
             count_visible_chars("\u{001b}[31mabc\u{001b}[0m"),
             "Three ASCII chars made red"
+        );
+    }
+
+    #[test]
+    fn test_expand_tabs_without_tabs_is_unchanged() {
+        let input = "plain \u{001b}[31mred\u{001b}[0m 🦀";
+        assert!(matches!(expand_tabs(input), Cow::Borrowed(s) if s == input));
+    }
+
+    #[test]
+    fn test_expand_tabs_at_column_zero() {
+        assert_eq!(expand_tabs("\tab"), "        ab");
+    }
+
+    #[test]
+    fn test_expand_tabs_mid_line() {
+        assert_eq!(expand_tabs("a\tb"), "a       b");
+    }
+
+    #[test]
+    fn test_expand_tabs_one_before_tab_stop() {
+        assert_eq!(expand_tabs("abcdefg\tx"), "abcdefg x");
+    }
+
+    #[test]
+    fn test_expand_tabs_exactly_at_tab_stop() {
+        assert_eq!(expand_tabs("abcdefgh\tx"), "abcdefgh        x");
+    }
+
+    #[test]
+    fn test_expand_tabs_multiple() {
+        assert_eq!(expand_tabs("a\tbc\t\td"), "a       bc              d");
+        assert_eq!(expand_tabs("x\t"), "x       ");
+    }
+
+    #[test]
+    fn test_expand_tabs_after_ansi_escape() {
+        assert_eq!(
+            expand_tabs("\u{001b}[31mab\u{001b}[0m\tc"),
+            "\u{001b}[31mab\u{001b}[0m      c"
+        );
+    }
+
+    #[test]
+    fn test_expand_tabs_after_osc_escape() {
+        assert_eq!(
+            expand_tabs("\u{001b}]8;;https://example.com\u{0007}ab\u{001b}]8;;\u{001b}\\\tc"),
+            "\u{001b}]8;;https://example.com\u{0007}ab\u{001b}]8;;\u{001b}\\      c"
+        );
+    }
+
+    #[test]
+    fn test_expand_tabs_after_wide_char() {
+        assert_eq!(expand_tabs("日本\tx"), "日本    x");
+        assert_eq!(expand_tabs("🦀\tx"), "🦀      x");
+    }
+
+    #[test]
+    fn test_expand_tabs_after_coloured_segment_and_wide_char() {
+        // Colour codes add 0 columns and 日 adds 2, so the tab sits at column 5
+        assert_eq!(
+            expand_tabs("\u{001b}[1;31mab\u{001b}[0m日c\td"),
+            "\u{001b}[1;31mab\u{001b}[0m日c   d"
+        );
+    }
+
+    #[test]
+    fn test_expand_tabs_inside_escape_sequence_is_left_alone() {
+        let input = "\u{001b}[\t31mab";
+        assert_eq!(expand_tabs(input), input);
+    }
+
+    #[test]
+    fn test_render_with_tabs() {
+        assert_eq!(
+            render(&["a\tb", "abcdefgh"], Some("x\ty")),
+            "+-- x       y --+\n| a       b     |\n| abcdefgh      |\n+---------------+\n"
         );
     }
 

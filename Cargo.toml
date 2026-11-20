@@ -14,6 +14,7 @@ clap = {version = "4.6.1", features = ["default", "cargo"]}
 strip-ansi-escapes = "0.2.1"
 anyhow = "1.0.102"
 unicode-width = "0.2.2"
+vte = {version = "0.14.1", default-features = false}
 
 [build-dependencies]
 clap = {version = "4.6.1", features = ["default", "cargo"]}

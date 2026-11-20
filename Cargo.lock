@@ -380,6 +380,7 @@ dependencies = [
  "strip-ansi-escapes",
  "trycmd",
  "unicode-width",
+ "vte",
 ]
 
 [[package]]
