@@ -108,6 +108,8 @@ const SGR_RESET: &str = "\u{1b}[0m";
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum EscapeKind {
     Sgr,
+    SgrStartingWithReset,
+    SgrReset,
     HyperlinkOpen,
     HyperlinkClose,
     Other,
@@ -120,18 +122,20 @@ struct EscapeFinder {
 
 impl Perform for EscapeFinder {
     // ignore only means vte dropped params it had no room for; the raw bytes are still complete
-    fn csi_dispatch(
-        &mut self,
-        _params: &Params,
-        intermediates: &[u8],
-        _ignore: bool,
-        action: char,
-    ) {
+    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) {
         // Private markers such as xterm's ESC[>4;2m are collected as intermediates and are not SGR
-        self.found = Some(if action == 'm' && intermediates.is_empty() {
-            EscapeKind::Sgr
-        } else {
-            EscapeKind::Other
+        if action != 'm' || !intermediates.is_empty() {
+            self.found = Some(EscapeKind::Other);
+            return;
+        }
+
+        // Only the first param is checked for a reset: a later 0 may be an argument, as in 38;5;0
+        let mut groups = params.iter();
+        let starts_with_reset = groups.next().is_none_or(|first| first == [0]);
+        self.found = Some(match (starts_with_reset, groups.next()) {
+            (true, None) => EscapeKind::SgrReset,
+            (true, Some(_)) => EscapeKind::SgrStartingWithReset,
+            (false, _) => EscapeKind::Sgr,
         });
     }
 
@@ -208,7 +212,7 @@ fn find_escapes(line: &str) -> Vec<(EscapeKind, &str)> {
 // closed before the padding and replayed verbatim after the next left border
 #[derive(Default)]
 struct OpenStyle<'s> {
-    sgr: String,
+    sgr: Vec<&'s str>,
     hyperlink: Option<&'s str>,
 }
 
@@ -216,8 +220,18 @@ impl<'s> OpenStyle<'s> {
     fn update(&mut self, line: &'s str) {
         for (kind, raw) in find_escapes(line) {
             match kind {
-                EscapeKind::Sgr if raw == "\u{1b}[m" || raw == SGR_RESET => self.sgr.clear(),
-                EscapeKind::Sgr => self.sgr.push_str(raw),
+                EscapeKind::SgrReset => self.sgr.clear(),
+                EscapeKind::SgrStartingWithReset => {
+                    self.sgr.clear();
+                    self.sgr.push(raw);
+                }
+                // SGR params only ever set attributes, never toggle them, so a repeat overrides
+                // everything its earlier copy did. Dropping that copy keeps the replay from growing
+                // with every line when content keeps restyling without resetting.
+                EscapeKind::Sgr => {
+                    self.sgr.retain(|earlier| *earlier != raw);
+                    self.sgr.push(raw);
+                }
                 EscapeKind::HyperlinkOpen => self.hyperlink = Some(raw),
                 EscapeKind::HyperlinkClose => self.hyperlink = None,
                 EscapeKind::Other => {}
@@ -226,7 +240,9 @@ impl<'s> OpenStyle<'s> {
     }
 
     fn reopen(&self, out: &mut impl Write) -> io::Result<()> {
-        write!(out, "{}", self.sgr)?;
+        for sgr in &self.sgr {
+            write!(out, "{}", sgr)?;
+        }
         if let Some(hyperlink) = self.hyperlink {
             write!(out, "{}", hyperlink)?;
         }
@@ -606,6 +622,35 @@ mod tests {
     fn test_find_escapes_sgr_with_more_params_than_vte_stores() {
         let sgr = format!("\u{1b}[{}1m", "1;".repeat(40));
         assert_eq!(find_escapes(&sgr), vec![(EscapeKind::Sgr, sgr.as_str())]);
+    }
+
+    #[test]
+    fn test_find_escapes_only_trusts_a_reset_in_first_position() {
+        assert_eq!(
+            find_escapes(
+                "\u{1b}[m\u{1b}[0m\u{1b}[00m\u{1b}[;1m\u{1b}[0;31m\u{1b}[38;5;0m\u{1b}[31;0m"
+            ),
+            vec![
+                (EscapeKind::SgrReset, "\u{1b}[m"),
+                (EscapeKind::SgrReset, "\u{1b}[0m"),
+                (EscapeKind::SgrReset, "\u{1b}[00m"),
+                (EscapeKind::SgrStartingWithReset, "\u{1b}[;1m"),
+                (EscapeKind::SgrStartingWithReset, "\u{1b}[0;31m"),
+                (EscapeKind::Sgr, "\u{1b}[38;5;0m"),
+                (EscapeKind::Sgr, "\u{1b}[31;0m"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_render_replays_each_open_sgr_once() {
+        assert_eq!(
+            render(&["\u{1b}[1ma\u{1b}[31mb\u{1b}[1mc", "d"], None),
+            "+-----+\n\
+             | \u{1b}[1ma\u{1b}[31mb\u{1b}[1mc\u{1b}[0m |\n\
+             | \u{1b}[31m\u{1b}[1md\u{1b}[0m   |\n\
+             +-----+\n"
+        );
     }
 
     #[test]
