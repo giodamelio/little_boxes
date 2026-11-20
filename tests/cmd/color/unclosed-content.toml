@@ -1,0 +1,8 @@
+args = ["--color", "always", "--border-color", "#ff8800"]
+stdin = "\u001B[1;44mbold on blue\nstill\u001B[0m\n"
+stdout = """
+\u001B[38;2;255;136;0m┏━━━━━━━━━━━━━━┓\u001B[0m
+\u001B[38;2;255;136;0m┃ \u001B[0m\u001B[1;44mbold on blue\u001B[0m\u001B[38;2;255;136;0m ┃\u001B[0m
+\u001B[38;2;255;136;0m┃ \u001B[0m\u001B[1;44mstill\u001B[0m       \u001B[38;2;255;136;0m ┃\u001B[0m
+\u001B[38;2;255;136;0m┗━━━━━━━━━━━━━━┛\u001B[0m
+"""

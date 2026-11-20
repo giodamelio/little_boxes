@@ -1,0 +1,7 @@
+args = ["--color", "always", "--border-color", "cyan", "--title", "\u001B[1;33myellow"]
+stdin = "plain content\n"
+stdout = """
+\u001B[36m┏━┫ \u001B[0m\u001B[1;33myellow\u001B[0m\u001B[36m ┣━━━━┓\u001B[0m
+\u001B[36m┃ \u001B[0mplain content\u001B[36m ┃\u001B[0m
+\u001B[36m┗━━━━━━━━━━━━━━━┛\u001B[0m
+"""

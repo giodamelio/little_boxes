@@ -1,0 +1,7 @@
+stdin = "\u001B]8;;https://example.com\u0007link that\nwraps\u001B]8;;\u0007 here\n"
+stdout = """
+┏━━━━━━━━━━━━┓
+┃ \u001B]8;;https://example.com\u0007link that\u001B]8;;\u0007  ┃
+┃ \u001B]8;;https://example.com\u0007wraps\u001B]8;;\u0007 here ┃
+┗━━━━━━━━━━━━┛
+"""

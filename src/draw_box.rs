@@ -103,6 +103,150 @@ fn expand_tabs(input: &str) -> Cow<'_, str> {
     Cow::Owned(expanded)
 }
 
+const SGR_RESET: &str = "\u{1b}[0m";
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum EscapeKind {
+    Sgr,
+    HyperlinkOpen,
+    HyperlinkClose,
+    Other,
+}
+
+#[derive(Default)]
+struct EscapeFinder {
+    found: Option<EscapeKind>,
+}
+
+impl Perform for EscapeFinder {
+    // ignore only means vte dropped params it had no room for; the raw bytes are still complete
+    fn csi_dispatch(
+        &mut self,
+        _params: &Params,
+        intermediates: &[u8],
+        _ignore: bool,
+        action: char,
+    ) {
+        // Private markers such as xterm's ESC[>4;2m are collected as intermediates and are not SGR
+        self.found = Some(if action == 'm' && intermediates.is_empty() {
+            EscapeKind::Sgr
+        } else {
+            EscapeKind::Other
+        });
+    }
+
+    fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
+        self.found = Some(match params {
+            [b"8", rest @ ..] if rest.iter().skip(1).all(|param| param.is_empty()) => {
+                EscapeKind::HyperlinkClose
+            }
+            [b"8", ..] => EscapeKind::HyperlinkOpen,
+            _ => EscapeKind::Other,
+        });
+    }
+
+    fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {
+        self.found = Some(EscapeKind::Other);
+    }
+
+    fn terminated(&self) -> bool {
+        self.found.is_some()
+    }
+}
+
+// vte decides where each sequence ends and what it is; the raw bytes are sliced out of the input
+// rather than rebuilt from vte's params, which clamps values and loses empty colon subparams
+fn find_escapes(line: &str) -> Vec<(EscapeKind, &str)> {
+    let bytes = line.as_bytes();
+    let mut parser = Parser::new();
+    let mut finder = EscapeFinder::default();
+    let mut escapes = Vec::new();
+    let mut position = 0;
+
+    while position < bytes.len() {
+        let mut end = position + parser.advance_until_terminated(&mut finder, &bytes[position..]);
+        position = end;
+        let Some(mut kind) = finder.found.take() else {
+            continue;
+        };
+        if kind == EscapeKind::Other {
+            continue;
+        }
+
+        // An OSC dispatches on the ESC of its ESC \ terminator, before vte has seen the backslash
+        let mut terminator_len = 0;
+        if matches!(kind, EscapeKind::HyperlinkOpen | EscapeKind::HyperlinkClose) {
+            match bytes[end - 1] {
+                0x07 => {}
+                0x1B if bytes.get(end) == Some(&b'\\') => {
+                    let _ = parser.advance_until_terminated(&mut finder, &bytes[end..=end]);
+                    finder.found = None;
+                    end += 1;
+                    position = end;
+                    terminator_len = 2;
+                }
+                // Cut short by CAN, SUB or another sequence, so there is no complete link to replay
+                _ => kind = EscapeKind::Other,
+            }
+        }
+        if kind == EscapeKind::Other {
+            continue;
+        }
+
+        // A sequence cannot contain ESC except in its terminator, so it starts at the last ESC before it
+        let start = bytes[..end - terminator_len]
+            .iter()
+            .rposition(|&byte| byte == 0x1B)
+            .expect("vte only dispatches CSI and OSC sequences that start with ESC");
+        escapes.push((kind, &line[start..end]));
+    }
+
+    escapes
+}
+
+// Styles a line leaves open would leak onto the border and the following lines, so they are
+// closed before the padding and replayed verbatim after the next left border
+#[derive(Default)]
+struct OpenStyle<'s> {
+    sgr: String,
+    hyperlink: Option<&'s str>,
+}
+
+impl<'s> OpenStyle<'s> {
+    fn update(&mut self, line: &'s str) {
+        for (kind, raw) in find_escapes(line) {
+            match kind {
+                EscapeKind::Sgr if raw == "\u{1b}[m" || raw == SGR_RESET => self.sgr.clear(),
+                EscapeKind::Sgr => self.sgr.push_str(raw),
+                EscapeKind::HyperlinkOpen => self.hyperlink = Some(raw),
+                EscapeKind::HyperlinkClose => self.hyperlink = None,
+                EscapeKind::Other => {}
+            }
+        }
+    }
+
+    fn reopen(&self, out: &mut impl Write) -> io::Result<()> {
+        write!(out, "{}", self.sgr)?;
+        if let Some(hyperlink) = self.hyperlink {
+            write!(out, "{}", hyperlink)?;
+        }
+        Ok(())
+    }
+
+    fn close(&self, out: &mut impl Write) -> io::Result<()> {
+        // Close with the same terminator the opener used, since the user's terminal already accepts it
+        match self.hyperlink {
+            Some(opener) if opener.ends_with('\u{7}') => write!(out, "\u{1b}]8;;\u{7}")?,
+            Some(_) => write!(out, "\u{1b}]8;;\u{1b}\\")?,
+            None => {}
+        }
+        if !self.sgr.is_empty() {
+            write!(out, "{}", SGR_RESET)?;
+        }
+        Ok(())
+    }
+}
+
 fn calculate_max_length(content: &[String]) -> usize {
     content
         .iter()
@@ -191,6 +335,9 @@ impl<'a> DrawBox<'a> {
                 )?;
                 self.end_border(out)?;
                 write!(out, "{}", title)?;
+                let mut style = OpenStyle::default();
+                style.update(title);
+                style.close(out)?;
                 self.begin_border(out)?;
                 write!(out, " {}", self.charset.t_right)?;
                 let title_width = count_visible_chars(title);
@@ -208,11 +355,15 @@ impl<'a> DrawBox<'a> {
     }
 
     fn render_middle(&self, out: &mut impl Write) -> io::Result<()> {
+        let mut style = OpenStyle::default();
         for line in self.content.iter() {
             self.begin_border(out)?;
             write!(out, "{} ", self.charset.vertical)?;
             self.end_border(out)?;
+            style.reopen(out)?;
             write!(out, "{}", line)?;
+            style.update(line);
+            style.close(out)?;
             repeat(out, ' ', self.inner_width - count_visible_chars(line))?;
             self.begin_border(out)?;
             write!(out, " {}", self.charset.vertical)?;
@@ -436,6 +587,133 @@ mod tests {
              \u{1b}[31m| \u{1b}[0m\u{1b}[1;36mabc\u{1b}[0m   \u{1b}[31m |\u{1b}[0m\n\
              \u{1b}[31m| \u{1b}[0mabcdef\u{1b}[31m |\u{1b}[0m\n\
              \u{1b}[31m+--------+\u{1b}[0m\n"
+        );
+    }
+
+    #[test]
+    fn test_find_escapes_keeps_sgr_bytes_exactly() {
+        assert_eq!(
+            find_escapes("a\u{1b}[38:2::255:0:0mb\u{1b}[58:2::1:2:3m\u{1b}[99999m"),
+            vec![
+                (EscapeKind::Sgr, "\u{1b}[38:2::255:0:0m"),
+                (EscapeKind::Sgr, "\u{1b}[58:2::1:2:3m"),
+                (EscapeKind::Sgr, "\u{1b}[99999m"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_find_escapes_sgr_with_more_params_than_vte_stores() {
+        let sgr = format!("\u{1b}[{}1m", "1;".repeat(40));
+        assert_eq!(find_escapes(&sgr), vec![(EscapeKind::Sgr, sgr.as_str())]);
+    }
+
+    #[test]
+    fn test_find_escapes_ignores_non_sgr_sequences() {
+        assert_eq!(
+            find_escapes("\u{1b}[>4;2m\u{1b}[2K\u{1b}[1A\u{1b}(0q\u{1b}(B"),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn test_find_escapes_after_aborted_sequence() {
+        assert_eq!(
+            find_escapes("\u{1b}[3\u{1b}[31mX"),
+            vec![(EscapeKind::Sgr, "\u{1b}[31m")]
+        );
+    }
+
+    #[test]
+    fn test_find_escapes_hyperlinks_with_either_terminator() {
+        assert_eq!(
+            find_escapes("\u{1b}]8;;http://a.b/c;d\u{7}L\u{1b}]8;;\u{7}"),
+            vec![
+                (EscapeKind::HyperlinkOpen, "\u{1b}]8;;http://a.b/c;d\u{7}"),
+                (EscapeKind::HyperlinkClose, "\u{1b}]8;;\u{7}"),
+            ]
+        );
+        assert_eq!(
+            find_escapes("\u{1b}]8;id=1;http://a.b\u{1b}\\L\u{1b}]8;id=1;\u{1b}\\\u{1b}[1m"),
+            vec![
+                (
+                    EscapeKind::HyperlinkOpen,
+                    "\u{1b}]8;id=1;http://a.b\u{1b}\\"
+                ),
+                (EscapeKind::HyperlinkClose, "\u{1b}]8;id=1;\u{1b}\\"),
+                (EscapeKind::Sgr, "\u{1b}[1m"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_find_escapes_skips_unterminated_hyperlink() {
+        assert_eq!(
+            find_escapes("\u{1b}]8;;http://a.b\u{1b}[31mX"),
+            vec![(EscapeKind::Sgr, "\u{1b}[31m")]
+        );
+        assert_eq!(find_escapes("\u{1b}]8;;http://a.b\u{18}X"), vec![]);
+        assert_eq!(find_escapes("a\u{1b}[31"), vec![]);
+    }
+
+    #[test]
+    fn test_render_closes_and_replays_unclosed_sgr() {
+        assert_eq!(
+            render(&["\u{1b}[1;31mab", "cdef\u{1b}[0m", "gh"], None),
+            "+------+\n\
+             | \u{1b}[1;31mab\u{1b}[0m   |\n\
+             | \u{1b}[1;31mcdef\u{1b}[0m |\n\
+             | gh   |\n\
+             +------+\n"
+        );
+    }
+
+    #[test]
+    fn test_render_accumulates_sgr_until_full_reset() {
+        assert_eq!(
+            render(&["\u{1b}[1ma\u{1b}[38;5;208mb", "c\u{1b}[mde", "f"], None),
+            "+-----+\n\
+             | \u{1b}[1ma\u{1b}[38;5;208mb\u{1b}[0m  |\n\
+             | \u{1b}[1m\u{1b}[38;5;208mc\u{1b}[mde |\n\
+             | f   |\n\
+             +-----+\n"
+        );
+    }
+
+    #[test]
+    fn test_render_closes_and_replays_open_hyperlink() {
+        assert_eq!(
+            render(&["\u{1b}]8;;http://a.b\u{7}ab", "cd\u{1b}]8;;\u{7}e"], None),
+            "+-----+\n\
+             | \u{1b}]8;;http://a.b\u{7}ab\u{1b}]8;;\u{7}  |\n\
+             | \u{1b}]8;;http://a.b\u{7}cd\u{1b}]8;;\u{7}e |\n\
+             +-----+\n"
+        );
+        assert_eq!(
+            render(&["\u{1b}]8;;http://a.b\u{1b}\\ab", "cd"], None),
+            "+----+\n\
+             | \u{1b}]8;;http://a.b\u{1b}\\ab\u{1b}]8;;\u{1b}\\ |\n\
+             | \u{1b}]8;;http://a.b\u{1b}\\cd\u{1b}]8;;\u{1b}\\ |\n\
+             +----+\n"
+        );
+    }
+
+    #[test]
+    fn test_render_closes_unclosed_title_style_without_carrying_it() {
+        assert_eq!(
+            render(&["abcdef"], Some("\u{1b}[35mt")),
+            "+-- \u{1b}[35mt\u{1b}[0m ---+\n| abcdef |\n+--------+\n"
+        );
+    }
+
+    #[test]
+    fn test_render_coloured_border_with_unclosed_content_style() {
+        assert_eq!(
+            render_red(&["\u{1b}[44mab", "c"], None),
+            "\u{1b}[31m+----+\u{1b}[0m\n\
+             \u{1b}[31m| \u{1b}[0m\u{1b}[44mab\u{1b}[0m\u{1b}[31m |\u{1b}[0m\n\
+             \u{1b}[31m| \u{1b}[0m\u{1b}[44mc\u{1b}[0m \u{1b}[31m |\u{1b}[0m\n\
+             \u{1b}[31m+----+\u{1b}[0m\n"
         );
     }
 }

@@ -1,0 +1,10 @@
+args = ["--color", "always", "--border-color", "244"]
+stdin = "\u001B[38;2;255;105;180mhot pink\nstill pink\u001B[0m\n\u001B[4:3;58:2::0:200:255mcurly underline\nstill curly\u001B[0m\n"
+stdout = """
+\u001B[38;5;244m┏━━━━━━━━━━━━━━━━━┓\u001B[0m
+\u001B[38;5;244m┃ \u001B[0m\u001B[38;2;255;105;180mhot pink\u001B[0m       \u001B[38;5;244m ┃\u001B[0m
+\u001B[38;5;244m┃ \u001B[0m\u001B[38;2;255;105;180mstill pink\u001B[0m     \u001B[38;5;244m ┃\u001B[0m
+\u001B[38;5;244m┃ \u001B[0m\u001B[4:3;58:2::0:200:255mcurly underline\u001B[0m\u001B[38;5;244m ┃\u001B[0m
+\u001B[38;5;244m┃ \u001B[0m\u001B[4:3;58:2::0:200:255mstill curly\u001B[0m    \u001B[38;5;244m ┃\u001B[0m
+\u001B[38;5;244m┗━━━━━━━━━━━━━━━━━┛\u001B[0m
+"""

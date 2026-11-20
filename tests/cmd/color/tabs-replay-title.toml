@@ -1,0 +1,9 @@
+args = ["--color", "always", "--border-color", "#8787ff", "--title", "\u001B[1mstatus\u001B[0m"]
+stdin = "\u001B[32mok\u001B[0m\ttests\n\u001B[33m*\tlint\nnext\u001B[0m\n"
+stdout = """
+\u001B[38;2;135;135;255m┏━┫ \u001B[0m\u001B[1mstatus\u001B[0m\u001B[38;2;135;135;255m ┣━━━━┓\u001B[0m
+\u001B[38;2;135;135;255m┃ \u001B[0m\u001B[32mok\u001B[0m      tests\u001B[38;2;135;135;255m ┃\u001B[0m
+\u001B[38;2;135;135;255m┃ \u001B[0m\u001B[33m*       lint\u001B[0m \u001B[38;2;135;135;255m ┃\u001B[0m
+\u001B[38;2;135;135;255m┃ \u001B[0m\u001B[33mnext\u001B[0m         \u001B[38;2;135;135;255m ┃\u001B[0m
+\u001B[38;2;135;135;255m┗━━━━━━━━━━━━━━━┛\u001B[0m
+"""

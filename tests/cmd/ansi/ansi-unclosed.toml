@@ -1,0 +1,9 @@
+args = ["--title", "\u001B[35mdemo"]
+stdin = "\u001B[1;31mstill red\nand here\u001B[0m\nplain\n"
+stdout = """
+┏━┫ \u001B[35mdemo\u001B[0m ┣━━┓
+┃ \u001B[1;31mstill red\u001B[0m ┃
+┃ \u001B[1;31mand here\u001B[0m  ┃
+┃ plain     ┃
+┗━━━━━━━━━━━┛
+"""
