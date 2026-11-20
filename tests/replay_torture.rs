@@ -27,6 +27,15 @@ impl Rng {
         &items[self.below(items.len())]
     }
 
+    fn rgb(&mut self) -> String {
+        format!(
+            "{};{};{}",
+            self.below(256),
+            self.below(256),
+            self.below(256)
+        )
+    }
+
     fn letters(&mut self) -> String {
         (0..1 + self.below(5))
             .map(|_| (b'a' + self.below(26) as u8) as char)
@@ -37,6 +46,7 @@ impl Rng {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Color {
     Basic(u16),
+    Bright(u16),
     Indexed(u16),
     Rgb(u16, u16, u16),
 }
@@ -47,6 +57,12 @@ struct Style {
     dim: bool,
     italic: bool,
     underline: Option<u16>,
+    slow_blink: bool,
+    rapid_blink: bool,
+    inverse: bool,
+    strike: bool,
+    overline: bool,
+    vertical_align: Option<u16>,
     fg: Option<Color>,
     bg: Option<Color>,
     underline_color: Option<Color>,
@@ -79,9 +95,27 @@ impl Style {
                 }
                 [23] => self.italic = false,
                 [24] => self.underline = None,
+                // Blink rates kept apart and 73-75 modelled as mintty does, so a terminal that
+                // reads codes more finely than the box does still sees the right style
+                [5] => self.slow_blink = true,
+                [6] => self.rapid_blink = true,
+                [25] => {
+                    self.slow_blink = false;
+                    self.rapid_blink = false;
+                }
+                [7] => self.inverse = true,
+                [27] => self.inverse = false,
+                [9] => self.strike = true,
+                [29] => self.strike = false,
+                [53] => self.overline = true,
+                [55] => self.overline = false,
+                [code @ (73 | 74)] => self.vertical_align = Some(*code),
+                [75] => self.vertical_align = None,
                 [code @ 30..=37] => self.fg = Some(Color::Basic(code - 30)),
+                [code @ 90..=97] => self.fg = Some(Color::Bright(code - 90)),
                 [39] => self.fg = None,
                 [code @ 40..=47] => self.bg = Some(Color::Basic(code - 40)),
+                [code @ 100..=107] => self.bg = Some(Color::Bright(code - 100)),
                 [49] => self.bg = None,
                 [59] => self.underline_color = None,
                 [code @ (38 | 48 | 58), 2, _, r, g, b] => {
@@ -363,6 +397,97 @@ fn torture_leading_reset_sequences_replace_the_replay() {
     }
     let output_len = assert_box_preserves_styles(&input);
     assert_size_bounded(&input, output_len, "\u{1b}[0;38;5;255m".len());
+}
+
+// Every SGR is distinct, so only overwriting slots, not dropping repeats, keeps the replay short
+fn generate_restyling(
+    rng: &mut Rng,
+    lines: usize,
+    mut style: impl FnMut(&mut Rng) -> String,
+) -> String {
+    let mut input = String::new();
+    for _ in 0..lines {
+        for _ in 0..1 + rng.below(6) {
+            input.push_str(&format!("\u{1b}[{}m", style(rng)));
+            input.push_str(&rng.letters());
+        }
+        input.push('\n');
+    }
+    input
+}
+
+fn sgr_len(params: &str) -> usize {
+    format!("\u{1b}[{params}m").len()
+}
+
+#[test]
+fn torture_truecolor_gradient_never_reset() {
+    let mut rng = Rng(0x5eed_0005);
+    let input = generate_restyling(&mut rng, 2000, |rng| format!("38;2;{}", rng.rgb()));
+    let output_len = assert_box_preserves_styles(&input);
+    assert_size_bounded(&input, output_len, sgr_len("38;2;255;255;255"));
+}
+
+#[test]
+fn torture_simultaneous_colour_gradients_never_reset() {
+    let mut rng = Rng(0x5eed_0006);
+    let input = generate_restyling(&mut rng, 2000, |rng| match rng.below(4) {
+        0 => format!("38;2;{}", rng.rgb()),
+        1 => format!("48;5;{}", rng.below(256)),
+        2 => format!("58:2::{}", rng.rgb().replace(';', ":")),
+        _ => format!("4:{}", 1 + rng.below(5)),
+    });
+    let output_len = assert_box_preserves_styles(&input);
+    let replay_bound = sgr_len("38;2;255;255;255")
+        + sgr_len("48;5;255")
+        + sgr_len("58:2::255:255:255")
+        + sgr_len("4:5");
+    assert_size_bounded(&input, output_len, replay_bound);
+}
+
+// A kept sequence always has a slot nothing after it writes, so of all the sequences writing the
+// same set of slots only the last can be kept
+#[test]
+fn torture_composite_sequences_never_reset() {
+    let mut rng = Rng(0x5eed_0007);
+    let input = generate_restyling(&mut rng, 2000, |rng| match rng.below(5) {
+        0 | 1 => format!("1;38;2;{}", rng.rgb()),
+        2 => format!("2;48;2;{}", rng.rgb()),
+        3 => "22".to_string(),
+        _ if rng.chance(50) => format!("3;58;5;{}", rng.below(256)),
+        _ => "23;59".to_string(),
+    });
+    let output_len = assert_box_preserves_styles(&input);
+    let replay_bound = sgr_len("1;38;2;255;255;255")
+        + sgr_len("2;48;2;255;255;255")
+        + sgr_len("22")
+        + sgr_len("3;58;5;255");
+    assert_size_bounded(&input, output_len, replay_bound);
+}
+
+#[test]
+fn torture_gradient_mixed_with_unknown_sequences_never_reset() {
+    let mut rng = Rng(0x5eed_0008);
+    let known = [
+        "5", "6", "25", "5;6", "7", "27", "9", "29", "53", "55", "100", "107",
+    ]
+    .map(String::from);
+    // The box cannot tell which slots these write, so it keeps them all
+    let unknown = ["73", "74", "75", "1;73", "25;74"].map(String::from);
+    let input = generate_restyling(&mut rng, 2000, |rng| match rng.below(4) {
+        0 => format!("38;2;{}", rng.rgb()),
+        1 => format!("9{}", rng.below(8)),
+        2 => rng.pick(&known).to_string(),
+        _ => rng.pick(&unknown).to_string(),
+    });
+    let output_len = assert_box_preserves_styles(&input);
+    let replay_bound = sgr_len("38;2;255;255;255")
+        + known
+            .iter()
+            .chain(&unknown)
+            .map(|params| sgr_len(params))
+            .sum::<usize>();
+    assert_size_bounded(&input, output_len, replay_bound);
 }
 
 #[test]

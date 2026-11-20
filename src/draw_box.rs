@@ -105,9 +105,97 @@ fn expand_tabs(input: &str) -> Cow<'_, str> {
 
 const SGR_RESET: &str = "\u{1b}[0m";
 
+// The display attributes an SGR sequence writes. Only used to decide which earlier sequences a
+// later one makes redundant; the sequence itself is always replayed from its raw bytes.
+//
+// The slots are as fine as any terminal splits them: a terminal that merges two, such as bold and
+// dim into one intensity, still sees every write the box assumes, but one that splits a slot the
+// box merged would keep state that a dropped sequence had cleared.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Slots(u16);
+
+impl Slots {
+    const NONE: Slots = Slots(0);
+    const BOLD: Slots = Slots(1 << 0);
+    const DIM: Slots = Slots(1 << 1);
+    const ITALIC: Slots = Slots(1 << 2);
+    const UNDERLINE: Slots = Slots(1 << 3);
+    const SLOW_BLINK: Slots = Slots(1 << 4);
+    const RAPID_BLINK: Slots = Slots(1 << 5);
+    const INVERSE: Slots = Slots(1 << 6);
+    const HIDDEN: Slots = Slots(1 << 7);
+    const STRIKE: Slots = Slots(1 << 8);
+    const OVERLINE: Slots = Slots(1 << 9);
+    const FG: Slots = Slots(1 << 10);
+    const BG: Slots = Slots(1 << 11);
+    const UNDERLINE_COLOR: Slots = Slots(1 << 12);
+
+    fn union(self, other: Slots) -> Slots {
+        Slots(self.0 | other.0)
+    }
+
+    fn contains(self, other: Slots) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    // None unless every code is understood, because a slot set that misses or invents an effect
+    // would let a still-live sequence be dropped. 21 counts as not understood, since terminals
+    // disagree on whether it is a double underline or bold off.
+    fn of_sgr(params: &Params) -> Option<Slots> {
+        let groups: Vec<&[u16]> = params.iter().collect();
+        let mut rest = groups.as_slice();
+        let mut slots = Slots::NONE;
+        while let [group, tail @ ..] = rest {
+            rest = tail;
+            let written = match *group {
+                [1] => Slots::BOLD,
+                [2] => Slots::DIM,
+                [22] => Slots::BOLD.union(Slots::DIM),
+                [3] | [23] => Slots::ITALIC,
+                [4] | [24] | [4, 0..=5] => Slots::UNDERLINE,
+                [5] => Slots::SLOW_BLINK,
+                [6] => Slots::RAPID_BLINK,
+                [25] => Slots::SLOW_BLINK.union(Slots::RAPID_BLINK),
+                [7] | [27] => Slots::INVERSE,
+                [8] | [28] => Slots::HIDDEN,
+                [9] | [29] => Slots::STRIKE,
+                [53] | [55] => Slots::OVERLINE,
+                [30..=37 | 39 | 90..=97] => Slots::FG,
+                [40..=47 | 49 | 100..=107] => Slots::BG,
+                [59] => Slots::UNDERLINE_COLOR,
+                [code, 5, 0..=255] | [code, 2, _, 0..=255, 0..=255, 0..=255] => {
+                    Slots::of_color(*code)?
+                }
+                // The semicolon form spreads its arguments over the following params
+                [code] => {
+                    rest = match rest {
+                        [[5], [0..=255], tail @ ..] => tail,
+                        [[2], [0..=255], [0..=255], [0..=255], tail @ ..] => tail,
+                        _ => return None,
+                    };
+                    Slots::of_color(*code)?
+                }
+                _ => return None,
+            };
+            slots = slots.union(written);
+        }
+        Some(slots)
+    }
+
+    fn of_color(code: u16) -> Option<Slots> {
+        match code {
+            38 => Some(Slots::FG),
+            48 => Some(Slots::BG),
+            58 => Some(Slots::UNDERLINE_COLOR),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum EscapeKind {
-    Sgr,
+    // None when the sequence's effect is not fully understood
+    Sgr(Option<Slots>),
     SgrStartingWithReset,
     SgrReset,
     HyperlinkOpen,
@@ -121,8 +209,9 @@ struct EscapeFinder {
 }
 
 impl Perform for EscapeFinder {
-    // ignore only means vte dropped params it had no room for; the raw bytes are still complete
-    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) {
+    // ignore only means vte dropped params it had no room for; the raw bytes are still complete,
+    // but the params seen are not, so the sequence's slots are unknown
+    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], ignore: bool, action: char) {
         // Private markers such as xterm's ESC[>4;2m are collected as intermediates and are not SGR
         if action != 'm' || !intermediates.is_empty() {
             self.found = Some(EscapeKind::Other);
@@ -135,7 +224,8 @@ impl Perform for EscapeFinder {
         self.found = Some(match (starts_with_reset, groups.next()) {
             (true, None) => EscapeKind::SgrReset,
             (true, Some(_)) => EscapeKind::SgrStartingWithReset,
-            (false, _) => EscapeKind::Sgr,
+            (false, _) if ignore => EscapeKind::Sgr(None),
+            (false, _) => EscapeKind::Sgr(Slots::of_sgr(params)),
         });
     }
 
@@ -212,7 +302,7 @@ fn find_escapes(line: &str) -> Vec<(EscapeKind, &str)> {
 // closed before the padding and replayed verbatim after the next left border
 #[derive(Default)]
 struct OpenStyle<'s> {
-    sgr: Vec<&'s str>,
+    sgr: Vec<(&'s str, Option<Slots>)>,
     hyperlink: Option<&'s str>,
 }
 
@@ -221,16 +311,20 @@ impl<'s> OpenStyle<'s> {
         for (kind, raw) in find_escapes(line) {
             match kind {
                 EscapeKind::SgrReset => self.sgr.clear(),
+                // A reset also clears attributes outside the known slots, so nothing later can
+                // make it redundant
                 EscapeKind::SgrStartingWithReset => {
                     self.sgr.clear();
-                    self.sgr.push(raw);
+                    self.sgr.push((raw, None));
                 }
-                // SGR params only ever set attributes, never toggle them, so a repeat overrides
-                // everything its earlier copy did. Dropping that copy keeps the replay from growing
-                // with every line when content keeps restyling without resetting.
-                EscapeKind::Sgr => {
-                    self.sgr.retain(|earlier| *earlier != raw);
-                    self.sgr.push(raw);
+                // SGR params only ever set attributes, never read or toggle them, so a sequence
+                // whose every slot is written again later, or a repeat of the same bytes, no longer
+                // affects the style. Dropping it keeps the replay from growing with every line when
+                // content keeps restyling without resetting.
+                EscapeKind::Sgr(slots) => {
+                    self.sgr.retain(|(earlier, _)| *earlier != raw);
+                    self.sgr.push((raw, slots));
+                    self.drop_overwritten();
                 }
                 EscapeKind::HyperlinkOpen => self.hyperlink = Some(raw),
                 EscapeKind::HyperlinkClose => self.hyperlink = None,
@@ -239,8 +333,23 @@ impl<'s> OpenStyle<'s> {
         }
     }
 
+    // A sequence of unknown slots is kept, but the writes it sits between still count: the last
+    // write to a slot wins whatever else is written around it
+    fn drop_overwritten(&mut self) {
+        let mut overwritten = Slots::NONE;
+        for index in (0..self.sgr.len()).rev() {
+            match self.sgr[index].1 {
+                Some(slots) if overwritten.contains(slots) => {
+                    self.sgr.remove(index);
+                }
+                Some(slots) => overwritten = overwritten.union(slots),
+                None => {}
+            }
+        }
+    }
+
     fn reopen(&self, out: &mut impl Write) -> io::Result<()> {
-        for sgr in &self.sgr {
+        for (sgr, _) in &self.sgr {
             write!(out, "{}", sgr)?;
         }
         if let Some(hyperlink) = self.hyperlink {
@@ -611,9 +720,12 @@ mod tests {
         assert_eq!(
             find_escapes("a\u{1b}[38:2::255:0:0mb\u{1b}[58:2::1:2:3m\u{1b}[99999m"),
             vec![
-                (EscapeKind::Sgr, "\u{1b}[38:2::255:0:0m"),
-                (EscapeKind::Sgr, "\u{1b}[58:2::1:2:3m"),
-                (EscapeKind::Sgr, "\u{1b}[99999m"),
+                (EscapeKind::Sgr(Some(Slots::FG)), "\u{1b}[38:2::255:0:0m"),
+                (
+                    EscapeKind::Sgr(Some(Slots::UNDERLINE_COLOR)),
+                    "\u{1b}[58:2::1:2:3m"
+                ),
+                (EscapeKind::Sgr(None), "\u{1b}[99999m"),
             ]
         );
     }
@@ -621,7 +733,10 @@ mod tests {
     #[test]
     fn test_find_escapes_sgr_with_more_params_than_vte_stores() {
         let sgr = format!("\u{1b}[{}1m", "1;".repeat(40));
-        assert_eq!(find_escapes(&sgr), vec![(EscapeKind::Sgr, sgr.as_str())]);
+        assert_eq!(
+            find_escapes(&sgr),
+            vec![(EscapeKind::Sgr(None), sgr.as_str())]
+        );
     }
 
     #[test]
@@ -636,8 +751,8 @@ mod tests {
                 (EscapeKind::SgrReset, "\u{1b}[00m"),
                 (EscapeKind::SgrStartingWithReset, "\u{1b}[;1m"),
                 (EscapeKind::SgrStartingWithReset, "\u{1b}[0;31m"),
-                (EscapeKind::Sgr, "\u{1b}[38;5;0m"),
-                (EscapeKind::Sgr, "\u{1b}[31;0m"),
+                (EscapeKind::Sgr(Some(Slots::FG)), "\u{1b}[38;5;0m"),
+                (EscapeKind::Sgr(None), "\u{1b}[31;0m"),
             ]
         );
     }
@@ -653,6 +768,172 @@ mod tests {
         );
     }
 
+    fn slots_of(params: &str) -> Option<Slots> {
+        let sgr = format!("\u{1b}[{params}m");
+        match find_escapes(&sgr).as_slice() {
+            [(EscapeKind::Sgr(slots), _)] => *slots,
+            other => panic!("{params:?} is not a plain SGR: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_sgr_slots_of_each_attribute() {
+        let cases = [
+            (&["1"][..], Slots::BOLD),
+            (&["2"], Slots::DIM),
+            (&["3", "23"], Slots::ITALIC),
+            (&["4", "24", "4:0", "4:3", "4:5"], Slots::UNDERLINE),
+            (&["5"], Slots::SLOW_BLINK),
+            (&["6"], Slots::RAPID_BLINK),
+            (&["25"], Slots::SLOW_BLINK.union(Slots::RAPID_BLINK)),
+            (&["7", "27"], Slots::INVERSE),
+            (&["8", "28"], Slots::HIDDEN),
+            (&["9", "29"], Slots::STRIKE),
+            (&["53", "55"], Slots::OVERLINE),
+            (&["30", "37", "39", "90", "97"], Slots::FG),
+            (&["40", "47", "49", "100", "107"], Slots::BG),
+            (&["59"], Slots::UNDERLINE_COLOR),
+        ];
+        for (codes, expected) in cases {
+            for code in codes {
+                assert_eq!(slots_of(code), Some(expected), "SGR {code}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_sgr_slots_of_normal_intensity_clears_bold_and_dim() {
+        assert_eq!(slots_of("22"), Some(Slots::BOLD.union(Slots::DIM)));
+    }
+
+    #[test]
+    fn test_sgr_slots_of_colours_in_both_forms() {
+        for (code, expected) in [
+            (38, Slots::FG),
+            (48, Slots::BG),
+            (58, Slots::UNDERLINE_COLOR),
+        ] {
+            for form in ["5;208", "2;1;2;3", ":5:208", ":2::1:2:3", ":2:0:1:2:3"] {
+                let params = match form.strip_prefix(':') {
+                    Some(colon) => format!("{code}:{colon}"),
+                    None => format!("{code};{form}"),
+                };
+                assert_eq!(slots_of(&params), Some(expected), "SGR {params}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_sgr_slots_of_composite_sequence() {
+        assert_eq!(
+            slots_of("1;38;2;1;2;3;48;5;0;4:3"),
+            Some(
+                Slots::BOLD
+                    .union(Slots::FG)
+                    .union(Slots::BG)
+                    .union(Slots::UNDERLINE)
+            )
+        );
+    }
+
+    #[test]
+    fn test_sgr_slots_unknown_for_unrecognised_or_ambiguous_codes() {
+        for params in [
+            "21", "10", "11", "51", "73", "99999", "1;21", "31;0", "1;;31", "4:6", "1:2",
+        ] {
+            assert_eq!(slots_of(params), None, "SGR {params}");
+        }
+    }
+
+    #[test]
+    fn test_sgr_slots_unknown_for_malformed_colours() {
+        for params in [
+            "38",
+            "38;5",
+            "38;5;256",
+            "38;2;1;2",
+            "38;2;1;2;256",
+            "38;3;1",
+            "48;5",
+            "58;2",
+            "38:5",
+            "38:2:1:2:3",
+            "38:2::1:2",
+            "38;5:1;2",
+            "31;38",
+        ] {
+            assert_eq!(slots_of(params), None, "SGR {params}");
+        }
+    }
+
+    #[test]
+    fn test_sgr_slots_unknown_when_vte_drops_params() {
+        assert_eq!(slots_of(&"1;".repeat(40)), None);
+    }
+
+    fn open_after(lines: &[&str]) -> Vec<String> {
+        let lines: Vec<String> = lines
+            .iter()
+            .map(|params| format!("\u{1b}[{params}m"))
+            .collect();
+        let mut style = OpenStyle::default();
+        for line in &lines {
+            style.update(line);
+        }
+        style
+            .sgr
+            .iter()
+            .map(|(raw, _)| {
+                raw.trim_start_matches("\u{1b}[")
+                    .trim_end_matches('m')
+                    .to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_open_style_gradient_keeps_only_the_last_colour() {
+        let gradient: Vec<String> = (0..50).map(|n| format!("38;2;{n};0;7")).collect();
+        let gradient: Vec<&str> = gradient.iter().map(String::as_str).collect();
+        assert_eq!(open_after(&gradient), ["38;2;49;0;7"]);
+    }
+
+    #[test]
+    fn test_open_style_keeps_a_sequence_with_a_live_slot() {
+        assert_eq!(open_after(&["1;31", "32"]), ["1;31", "32"]);
+    }
+
+    #[test]
+    fn test_open_style_drops_a_sequence_once_all_its_slots_are_written() {
+        assert_eq!(open_after(&["1;31", "32", "22"]), ["32", "22"]);
+        assert_eq!(open_after(&["1", "2", "22"]), ["22"]);
+        assert_eq!(open_after(&["22", "1"]), ["22", "1"]);
+    }
+
+    #[test]
+    fn test_open_style_keeps_unknown_sequences_in_order() {
+        assert_eq!(
+            open_after(&["31", "21", "1", "73", "32", "51", "33", "22"]),
+            ["21", "73", "51", "33", "22"]
+        );
+    }
+
+    #[test]
+    fn test_open_style_blink_off_outlives_a_later_slow_blink() {
+        assert_eq!(open_after(&["6", "25", "5"]), ["25", "5"]);
+        assert_eq!(open_after(&["6", "25", "5", "6"]), ["5", "6"]);
+    }
+
+    #[test]
+    fn test_open_style_drops_an_identical_repeat_of_an_unknown_sequence() {
+        assert_eq!(open_after(&["21", "73", "21"]), ["73", "21"]);
+    }
+
+    #[test]
+    fn test_open_style_never_drops_a_leading_reset() {
+        assert_eq!(open_after(&["0;1", "1", "22"]), ["0;1", "22"]);
+    }
+
     #[test]
     fn test_find_escapes_ignores_non_sgr_sequences() {
         assert_eq!(
@@ -665,7 +946,7 @@ mod tests {
     fn test_find_escapes_after_aborted_sequence() {
         assert_eq!(
             find_escapes("\u{1b}[3\u{1b}[31mX"),
-            vec![(EscapeKind::Sgr, "\u{1b}[31m")]
+            vec![(EscapeKind::Sgr(Some(Slots::FG)), "\u{1b}[31m")]
         );
     }
 
@@ -686,7 +967,7 @@ mod tests {
                     "\u{1b}]8;id=1;http://a.b\u{1b}\\"
                 ),
                 (EscapeKind::HyperlinkClose, "\u{1b}]8;id=1;\u{1b}\\"),
-                (EscapeKind::Sgr, "\u{1b}[1m"),
+                (EscapeKind::Sgr(Some(Slots::BOLD)), "\u{1b}[1m"),
             ]
         );
     }
@@ -695,7 +976,7 @@ mod tests {
     fn test_find_escapes_skips_unterminated_hyperlink() {
         assert_eq!(
             find_escapes("\u{1b}]8;;http://a.b\u{1b}[31mX"),
-            vec![(EscapeKind::Sgr, "\u{1b}[31m")]
+            vec![(EscapeKind::Sgr(Some(Slots::FG)), "\u{1b}[31m")]
         );
         assert_eq!(find_escapes("\u{1b}]8;;http://a.b\u{18}X"), vec![]);
         assert_eq!(find_escapes("a\u{1b}[31"), vec![]);
