@@ -1,0 +1,7 @@
+args = ["--file", "./does_not_exist.txt"]
+fs.cwd = "../shared_fixtures.in"
+status.code = 1
+stdout = ""
+stderr = """
+Error: File "./does_not_exist.txt" does not exist
+"""

@@ -1,0 +1,7 @@
+args = ["--file", "./empty_dir"]
+fs.cwd = "../shared_fixtures.in"
+status.code = 1
+stdout = ""
+stderr = """
+Error: "./empty_dir" is a directory, it must be a file
+"""

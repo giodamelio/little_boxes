@@ -138,7 +138,7 @@ fn main() {
         // like ripgrep so `set -o pipefail` scripts piping into `head` keep working.
         Err(err) if is_broken_pipe(&err) => (),
         Err(err) => {
-            println!("Error: {}", err);
+            eprintln!("Error: {}", err);
             std::process::exit(1);
         }
     };
