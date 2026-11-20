@@ -1,32 +1,15 @@
+use std::io::{self, Write};
+
 use unicode_width::UnicodeWidthStr;
 
 use super::charset::Charset;
-
-pub trait DrawBox {
-    fn new(content: Vec<String>, charset: Charset) -> Self;
-
-    // Print the box
-    fn print(&self);
-
-    // Individual box parts
-    fn print_top(&self);
-    fn print_middle(&self);
-    fn print_bottom(&self);
-}
 
 // Find the display width of visible chars in a String (strips ANSI codes first)
 fn count_visible_chars(input: &str) -> usize {
     strip_ansi_escapes::strip_str(input).width()
 }
 
-// A simple box around the content
-pub struct SimpleBox {
-    content: Vec<String>,
-    charset: Charset,
-    max_length: usize,
-}
-
-fn calculate_max_length(content: Vec<String>) -> usize {
+fn calculate_max_length(content: &[String]) -> usize {
     content
         .iter()
         .map(|line| count_visible_chars(line))
@@ -34,148 +17,94 @@ fn calculate_max_length(content: Vec<String>) -> usize {
         .unwrap_or(0)
 }
 
-impl DrawBox for SimpleBox {
-    fn new(content: Vec<String>, charset: Charset) -> SimpleBox {
-        //  Get the longest line in the output
-        let max_length = calculate_max_length(content.clone());
-
-        SimpleBox {
-            content,
-            charset,
-            max_length,
-        }
+fn repeat(out: &mut impl Write, c: char, count: usize) -> io::Result<()> {
+    for _ in 0..count {
+        write!(out, "{}", c)?;
     }
-
-    fn print(&self) {
-        self.print_top();
-        self.print_middle();
-        self.print_bottom();
-    }
-
-    fn print_top(&self) {
-        print!("{}", self.charset.corner_up_left);
-        for _ in 0..(self.max_length + 2) {
-            print!("{}", self.charset.horizontal_top)
-        }
-        println!("{}", self.charset.corner_up_right);
-    }
-
-    fn print_middle(&self) {
-        for line in self.content.iter() {
-            print!("{} {}", self.charset.vertical, line);
-            let length: usize = count_visible_chars(line);
-
-            // Pad shorter lines with spaces
-            for _ in 0..(self.max_length - length) {
-                print!(" ");
-            }
-
-            println!(" {}", self.charset.vertical);
-        }
-    }
-
-    fn print_bottom(&self) {
-        print!("{}", self.charset.corner_down_left);
-        for _ in 0..(self.max_length + 2) {
-            print!("{}", self.charset.horizontal_bottom)
-        }
-        println!("{}", self.charset.corner_down_right);
-    }
+    Ok(())
 }
 
-// A simple box around the content
-pub struct TitleBox<'a> {
-    title: &'a str,
+pub struct DrawBox<'a> {
     content: Vec<String>,
+    title: Option<&'a str>,
     charset: Charset,
-    max_length: usize,
+    // Visible width between the vertical borders, excluding the single space of margin on each side
+    inner_width: usize,
 }
 
-impl<'a> DrawBox for TitleBox<'a> {
-    fn new(content: Vec<String>, charset: Charset) -> TitleBox<'a> {
-        //  Get the longest line in the output
-        let max_length = calculate_max_length(content.clone());
+impl<'a> DrawBox<'a> {
+    pub fn new(content: Vec<String>, title: Option<&'a str>, charset: Charset) -> DrawBox<'a> {
+        let content_width = calculate_max_length(&content);
+        // A title needs four extra columns for the left corner, horizontal, its tees and its spacing
+        let inner_width = match title {
+            Some(title) => content_width.max(count_visible_chars(title) + 4),
+            None => content_width,
+        };
 
-        TitleBox {
-            title: "",
+        DrawBox {
             content,
+            title,
             charset,
-            max_length,
+            inner_width,
         }
     }
 
-    fn print(&self) {
-        self.print_top();
-        self.print_middle();
-        self.print_bottom();
+    pub fn render(&self, out: &mut impl Write) -> io::Result<()> {
+        self.render_top(out)?;
+        self.render_middle(out)?;
+        self.render_bottom(out)
     }
 
-    fn print_top(&self) {
-        print!(
-            "{}{}{} {} {}",
-            self.charset.corner_up_left,
-            self.charset.horizontal_top,
-            self.charset.t_left,
-            self.title,
-            self.charset.t_right
-        );
-
-        let title_length = count_visible_chars(self.title) + 5;
-        let num_pad: usize = match title_length.cmp(&self.max_length) {
-            std::cmp::Ordering::Less => self.max_length + 2 - title_length,
-            std::cmp::Ordering::Greater => 1,
-            std::cmp::Ordering::Equal => 2,
-        };
-        for _ in 0..num_pad {
-            print!("{}", self.charset.horizontal_top)
-        }
-        println!("{}", self.charset.corner_up_right);
-    }
-
-    fn print_middle(&self) {
-        for line in self.content.iter() {
-            print!("{} {}", self.charset.vertical, line);
-
-            // Pad shorter lines with spaces
-            let length: usize = count_visible_chars(line);
-            let title_length = count_visible_chars(self.title) + 5;
-            let num_pad: usize = match title_length.cmp(&self.max_length) {
-                std::cmp::Ordering::Less => self.max_length - length,
-                std::cmp::Ordering::Greater => title_length - length - 1,
-                std::cmp::Ordering::Equal => title_length - length,
-            };
-            for _ in 0..num_pad {
-                print!(" ");
+    fn render_top(&self, out: &mut impl Write) -> io::Result<()> {
+        write!(out, "{}", self.charset.corner_up_left)?;
+        match self.title {
+            Some(title) => {
+                write!(
+                    out,
+                    "{}{} {} {}",
+                    self.charset.horizontal_top, self.charset.t_left, title, self.charset.t_right
+                )?;
+                let title_width = count_visible_chars(title);
+                repeat(
+                    out,
+                    self.charset.horizontal_top,
+                    self.inner_width - title_width - 3,
+                )?;
             }
-
-            println!(" {}", self.charset.vertical);
+            None => repeat(out, self.charset.horizontal_top, self.inner_width + 2)?,
         }
+        writeln!(out, "{}", self.charset.corner_up_right)
     }
 
-    fn print_bottom(&self) {
-        print!("{}", self.charset.corner_down_left);
-        let title_length = count_visible_chars(self.title) + 5;
-        let num_pad: usize = match title_length.cmp(&self.max_length) {
-            std::cmp::Ordering::Less => self.max_length + 2,
-            std::cmp::Ordering::Greater => title_length + 1,
-            std::cmp::Ordering::Equal => title_length + 2,
-        };
-        for _ in 0..num_pad {
-            print!("{}", self.charset.horizontal_bottom)
+    fn render_middle(&self, out: &mut impl Write) -> io::Result<()> {
+        for line in self.content.iter() {
+            write!(out, "{} {}", self.charset.vertical, line)?;
+            repeat(out, ' ', self.inner_width - count_visible_chars(line))?;
+            writeln!(out, " {}", self.charset.vertical)?;
         }
-        println!("{}", self.charset.corner_down_right);
+        Ok(())
     }
-}
 
-impl<'a> TitleBox<'a> {
-    pub fn set_title(&mut self, title: &'a str) {
-        self.title = title;
+    fn render_bottom(&self, out: &mut impl Write) -> io::Result<()> {
+        write!(out, "{}", self.charset.corner_down_left)?;
+        repeat(out, self.charset.horizontal_bottom, self.inner_width + 2)?;
+        writeln!(out, "{}", self.charset.corner_down_right)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::charset::get_charset;
+
+    fn render(content: &[&str], title: Option<&str>) -> String {
+        let content = content.iter().map(|line| line.to_string()).collect();
+        let mut out = Vec::new();
+        DrawBox::new(content, title, get_charset("ascii"))
+            .render(&mut out)
+            .unwrap();
+        String::from_utf8(out).unwrap()
+    }
 
     #[test]
     fn test_count_visible_chars() {
@@ -194,10 +123,10 @@ mod tests {
             String::from("Hola"),
             String::from("Caio"),
         ];
-        assert_eq!(calculate_max_length(lines), 5);
+        assert_eq!(calculate_max_length(&lines), 5);
 
         let empty: Vec<String> = vec![];
-        assert_eq!(calculate_max_length(empty), 0);
+        assert_eq!(calculate_max_length(&empty), 0);
     }
 
     #[test]
@@ -207,6 +136,44 @@ mod tests {
             String::from("\u{001b}[1;36mabc\u{001b}[0m"),
             String::from("abcdef"),
         ];
-        assert_eq!(calculate_max_length(lines), 6);
+        assert_eq!(calculate_max_length(&lines), 6);
+    }
+
+    #[test]
+    fn test_render_without_title() {
+        assert_eq!(
+            render(&["ab", "abcd"], None),
+            "+------+\n| ab   |\n| abcd |\n+------+\n"
+        );
+        assert_eq!(render(&[], None), "+--+\n+--+\n");
+    }
+
+    #[test]
+    fn test_render_title_narrower_than_content() {
+        assert_eq!(
+            render(&["abcdefgh"], Some("ab")),
+            "+-- ab ----+\n| abcdefgh |\n+----------+\n"
+        );
+    }
+
+    #[test]
+    fn test_render_title_exactly_fits_content() {
+        assert_eq!(
+            render(&["abcdef"], Some("ab")),
+            "+-- ab --+\n| abcdef |\n+--------+\n"
+        );
+    }
+
+    #[test]
+    fn test_render_title_wider_than_content() {
+        assert_eq!(
+            render(&["a"], Some("abcd")),
+            "+-- abcd --+\n| a        |\n+----------+\n"
+        );
+    }
+
+    #[test]
+    fn test_render_empty_title() {
+        assert_eq!(render(&["a"], Some("")), "+--  --+\n| a    |\n+------+\n");
     }
 }
