@@ -15,4 +15,115 @@ pub fn cli() -> Command {
                 .value_parser(value_parser!(PathBuf)),
         )
         .arg(arg!(--all "Compare all charsets"))
+        .arg(
+            arg!(--"border-color" <SPEC> "Color the border: a name like red or bright-blue, a 256-color index 0-255, or #rrggbb")
+                .value_parser(parse_border_color),
+        )
+        .arg(
+            arg!(--color <WHEN> "When to color the border")
+                .value_parser(["auto", "always", "never"])
+                .default_value("auto"),
+        )
+}
+
+const NAMED_COLORS: [&str; 8] = [
+    "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+];
+
+// Returns the SGR escape that starts the colour rather than a colour type, because build.rs
+// includes this file on its own and would see any type only main.rs reads as dead code
+pub fn parse_border_color(spec: &str) -> Result<String, String> {
+    let (base, name) = match spec.strip_prefix("bright-") {
+        Some(name) => (90, name),
+        None => (30, spec),
+    };
+    if let Some(index) = NAMED_COLORS.iter().position(|&named| named == name) {
+        return Ok(format!("\u{1b}[{}m", base + index));
+    }
+
+    // u8's parser accepts a leading '+', so digits are checked first
+    if spec.bytes().all(|b| b.is_ascii_digit())
+        && let Ok(index) = spec.parse::<u8>()
+    {
+        return Ok(format!("\u{1b}[38;5;{}m", index));
+    }
+
+    if let Some(hex) = spec.strip_prefix('#')
+        && hex.len() == 6
+        && hex.bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        let channel = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).unwrap();
+        return Ok(format!(
+            "\u{1b}[38;2;{};{};{}m",
+            channel(0),
+            channel(2),
+            channel(4)
+        ));
+    }
+
+    Err(format!(
+        "expected a color name ({}, or any of them prefixed with bright-), a 256-color index 0-255, or a hex color #rrggbb",
+        NAMED_COLORS.join(", ")
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_named_colors() {
+        assert_eq!(parse_border_color("black"), Ok("\u{1b}[30m".to_string()));
+        assert_eq!(parse_border_color("red"), Ok("\u{1b}[31m".to_string()));
+        assert_eq!(parse_border_color("white"), Ok("\u{1b}[37m".to_string()));
+        assert_eq!(
+            parse_border_color("bright-black"),
+            Ok("\u{1b}[90m".to_string())
+        );
+        assert_eq!(
+            parse_border_color("bright-white"),
+            Ok("\u{1b}[97m".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_index_colors() {
+        assert_eq!(parse_border_color("0"), Ok("\u{1b}[38;5;0m".to_string()));
+        assert_eq!(
+            parse_border_color("255"),
+            Ok("\u{1b}[38;5;255m".to_string())
+        );
+        assert!(parse_border_color("256").is_err());
+        assert!(parse_border_color("-1").is_err());
+        assert!(parse_border_color("+5").is_err());
+    }
+
+    #[test]
+    fn test_parse_hex_colors() {
+        assert_eq!(
+            parse_border_color("#ff8000"),
+            Ok("\u{1b}[38;2;255;128;0m".to_string())
+        );
+        assert_eq!(
+            parse_border_color("#FFfF00"),
+            Ok("\u{1b}[38;2;255;255;0m".to_string())
+        );
+        assert!(parse_border_color("#fff").is_err());
+        assert!(parse_border_color("#ff80000").is_err());
+        assert!(parse_border_color("#gg0000").is_err());
+        assert!(parse_border_color("#+f0000").is_err());
+        assert!(parse_border_color("ff8000").is_err());
+    }
+
+    #[test]
+    fn test_parse_rejects_unknown_names() {
+        let err = parse_border_color("purple").unwrap_err();
+        assert!(err.contains("bright-"), "{}", err);
+        assert!(err.contains("0-255"), "{}", err);
+        assert!(err.contains("#rrggbb"), "{}", err);
+        assert!(parse_border_color("bright-").is_err());
+        assert!(parse_border_color("bright-bright-red").is_err());
+        assert!(parse_border_color("Red").is_err());
+        assert!(parse_border_color("").is_err());
+    }
 }

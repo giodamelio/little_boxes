@@ -1,0 +1,7 @@
+args = ["--color", "never", "--border-color", "42", "--charset", "ascii"]
+stdin = "Hello"
+stdout = """
++-------+
+| Hello |
++-------+
+"""

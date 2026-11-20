@@ -124,6 +124,7 @@ pub struct DrawBox<'a> {
     charset: Charset,
     // Visible width between the vertical borders, excluding the single space of margin on each side
     inner_width: usize,
+    border_sgr: Option<&'a str>,
 }
 
 impl<'a> DrawBox<'a> {
@@ -149,7 +150,13 @@ impl<'a> DrawBox<'a> {
             title,
             charset,
             inner_width,
+            border_sgr: None,
         }
+    }
+
+    pub fn border_sgr(mut self, sgr: Option<&'a str>) -> DrawBox<'a> {
+        self.border_sgr = sgr;
+        self
     }
 
     pub fn render(&self, out: &mut impl Write) -> io::Result<()> {
@@ -158,15 +165,34 @@ impl<'a> DrawBox<'a> {
         self.render_bottom(out)
     }
 
+    fn begin_border(&self, out: &mut impl Write) -> io::Result<()> {
+        match self.border_sgr {
+            Some(sgr) => write!(out, "{}", sgr),
+            None => Ok(()),
+        }
+    }
+
+    fn end_border(&self, out: &mut impl Write) -> io::Result<()> {
+        match self.border_sgr {
+            Some(_) => write!(out, "\u{1b}[0m"),
+            None => Ok(()),
+        }
+    }
+
     fn render_top(&self, out: &mut impl Write) -> io::Result<()> {
+        self.begin_border(out)?;
         write!(out, "{}", self.charset.corner_up_left)?;
         match &self.title {
             Some(title) => {
                 write!(
                     out,
-                    "{}{} {} {}",
-                    self.charset.horizontal_top, self.charset.t_left, title, self.charset.t_right
+                    "{}{} ",
+                    self.charset.horizontal_top, self.charset.t_left
                 )?;
+                self.end_border(out)?;
+                write!(out, "{}", title)?;
+                self.begin_border(out)?;
+                write!(out, " {}", self.charset.t_right)?;
                 let title_width = count_visible_chars(title);
                 repeat(
                     out,
@@ -176,22 +202,33 @@ impl<'a> DrawBox<'a> {
             }
             None => repeat(out, self.charset.horizontal_top, self.inner_width + 2)?,
         }
-        writeln!(out, "{}", self.charset.corner_up_right)
+        write!(out, "{}", self.charset.corner_up_right)?;
+        self.end_border(out)?;
+        writeln!(out)
     }
 
     fn render_middle(&self, out: &mut impl Write) -> io::Result<()> {
         for line in self.content.iter() {
-            write!(out, "{} {}", self.charset.vertical, line)?;
+            self.begin_border(out)?;
+            write!(out, "{} ", self.charset.vertical)?;
+            self.end_border(out)?;
+            write!(out, "{}", line)?;
             repeat(out, ' ', self.inner_width - count_visible_chars(line))?;
-            writeln!(out, " {}", self.charset.vertical)?;
+            self.begin_border(out)?;
+            write!(out, " {}", self.charset.vertical)?;
+            self.end_border(out)?;
+            writeln!(out)?;
         }
         Ok(())
     }
 
     fn render_bottom(&self, out: &mut impl Write) -> io::Result<()> {
+        self.begin_border(out)?;
         write!(out, "{}", self.charset.corner_down_left)?;
         repeat(out, self.charset.horizontal_bottom, self.inner_width + 2)?;
-        writeln!(out, "{}", self.charset.corner_down_right)
+        write!(out, "{}", self.charset.corner_down_right)?;
+        self.end_border(out)?;
+        writeln!(out)
     }
 }
 
@@ -355,5 +392,50 @@ mod tests {
     #[test]
     fn test_render_empty_title() {
         assert_eq!(render(&["a"], Some("")), "+--  --+\n| a    |\n+------+\n");
+    }
+
+    fn render_red(content: &[&str], title: Option<&str>) -> String {
+        let content = content.iter().map(|line| line.to_string()).collect();
+        let mut out = Vec::new();
+        DrawBox::new(content, title, get_charset("ascii"))
+            .border_sgr(Some("\u{1b}[31m"))
+            .render(&mut out)
+            .unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn test_render_coloured_without_title() {
+        assert_eq!(
+            render_red(&["ab", "abcd"], None),
+            "\u{1b}[31m+------+\u{1b}[0m\n\
+             \u{1b}[31m| \u{1b}[0mab  \u{1b}[31m |\u{1b}[0m\n\
+             \u{1b}[31m| \u{1b}[0mabcd\u{1b}[31m |\u{1b}[0m\n\
+             \u{1b}[31m+------+\u{1b}[0m\n"
+        );
+    }
+
+    #[test]
+    fn test_render_coloured_with_title() {
+        assert_eq!(
+            render_red(&["abcdefgh"], Some("ab")),
+            "\u{1b}[31m+-- \u{1b}[0mab\u{1b}[31m ----+\u{1b}[0m\n\
+             \u{1b}[31m| \u{1b}[0mabcdefgh\u{1b}[31m |\u{1b}[0m\n\
+             \u{1b}[31m+----------+\u{1b}[0m\n"
+        );
+    }
+
+    #[test]
+    fn test_render_coloured_passes_content_and_title_escapes_through() {
+        assert_eq!(
+            render_red(
+                &["\u{1b}[1;36mabc\u{1b}[0m", "abcdef"],
+                Some("\u{1b}[32mt\u{1b}[0m")
+            ),
+            "\u{1b}[31m+-- \u{1b}[0m\u{1b}[32mt\u{1b}[0m\u{1b}[31m ---+\u{1b}[0m\n\
+             \u{1b}[31m| \u{1b}[0m\u{1b}[1;36mabc\u{1b}[0m   \u{1b}[31m |\u{1b}[0m\n\
+             \u{1b}[31m| \u{1b}[0mabcdef\u{1b}[31m |\u{1b}[0m\n\
+             \u{1b}[31m+--------+\u{1b}[0m\n"
+        );
     }
 }

@@ -1,0 +1,9 @@
+args = ["--border-color", "purple"]
+stdin = "Hello"
+status.code = 2
+stdout = ""
+stderr = """
+error: invalid value 'purple' for '--border-color <SPEC>': expected a color name (black, red, green, yellow, blue, magenta, cyan, white, or any of them prefixed with bright-), a 256-color index 0-255, or a hex color #rrggbb
+
+For more information, try '--help'.
+"""

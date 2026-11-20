@@ -1,0 +1,7 @@
+args = ["--color", "auto", "--border-color", "red"]
+stdin = "Hello World"
+stdout = """
+┏━━━━━━━━━━━━━┓
+┃ Hello World ┃
+┗━━━━━━━━━━━━━┛
+"""

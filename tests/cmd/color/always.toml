@@ -1,0 +1,8 @@
+args = ["--color", "always", "--border-color", "red", "--title", "demo"]
+stdin = "\u001B[1;36mcargo run\u001B[0m\nprek run\n"
+stdout = """
+\u001B[31m┏━┫ \u001B[0mdemo\u001B[31m ┣━━┓\u001B[0m
+\u001B[31m┃ \u001B[0m\u001B[1;36mcargo run\u001B[0m\u001B[31m ┃\u001B[0m
+\u001B[31m┃ \u001B[0mprek run \u001B[31m ┃\u001B[0m
+\u001B[31m┗━━━━━━━━━━━┛\u001B[0m
+"""

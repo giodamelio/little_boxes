@@ -1,0 +1,10 @@
+args = ["--color", "always", "--border-color", "#ff8000", "--charset", "ascii"]
+stdin = "Hello"
+stdout = """
+\u001B[38;2;255;128;0m+-------+\u001B[0m
+\u001B[38;2;255;128;0m| \u001B[0mHello\u001B[38;2;255;128;0m |\u001B[0m
+\u001B[38;2;255;128;0m+-------+\u001B[0m
+"""
+
+[env.add]
+NO_COLOR = "1"

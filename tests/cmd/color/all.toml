@@ -1,0 +1,32 @@
+args = ["--all", "--color", "always", "--border-color", "bright-blue"]
+stdin = "Hi"
+stdout = """
+thick:
+\u001B[94m┏━━━━┓\u001B[0m
+\u001B[94m┃ \u001B[0mHi\u001B[94m ┃\u001B[0m
+\u001B[94m┗━━━━┛\u001B[0m
+thin:
+\u001B[94m┌────┐\u001B[0m
+\u001B[94m│ \u001B[0mHi\u001B[94m │\u001B[0m
+\u001B[94m└────┘\u001B[0m
+double:
+\u001B[94m╔════╗\u001B[0m
+\u001B[94m║ \u001B[0mHi\u001B[94m ║\u001B[0m
+\u001B[94m╚════╝\u001B[0m
+box:
+\u001B[94m▄▄▄▄▄▄\u001B[0m
+\u001B[94m█ \u001B[0mHi\u001B[94m █\u001B[0m
+\u001B[94m▀▀▀▀▀▀\u001B[0m
+rounded:
+\u001B[94m╭────╮\u001B[0m
+\u001B[94m│ \u001B[0mHi\u001B[94m │\u001B[0m
+\u001B[94m╰────╯\u001B[0m
+dot:
+\u001B[94m⣶⠶⠶⠶⠶⣶\u001B[0m
+\u001B[94m⣿ \u001B[0mHi\u001B[94m ⣿\u001B[0m
+\u001B[94m⠿⠶⠶⠶⠶⠿\u001B[0m
+ascii:
+\u001B[94m+----+\u001B[0m
+\u001B[94m| \u001B[0mHi\u001B[94m |\u001B[0m
+\u001B[94m+----+\u001B[0m
+"""
