@@ -61,10 +61,59 @@ fn should_color(when: &str, is_tty: bool, no_color: Option<&OsStr>, term: Option
     }
 }
 
+// clap_complete panics if a write fails, so scripts are rendered to memory and written by
+// write_stdout, which reports a closed pipe as an error main treats as success
+fn completion_script(shell: &str) -> Vec<u8> {
+    let mut cmd = cli();
+    let name = cmd.get_name().to_string();
+    let mut script = Vec::new();
+    match shell {
+        "nushell" => {
+            clap_complete::generate(clap_complete_nushell::Nushell, &mut cmd, name, &mut script);
+        }
+        other => {
+            let shell: clap_complete::Shell = other
+                .parse()
+                .unwrap_or_else(|err| unreachable!("Clap accepted shell {other:?}: {err}"));
+            clap_complete::generate(shell, &mut cmd, name, &mut script);
+        }
+    }
+    script
+}
+
+fn write_stdout(bytes: &[u8]) -> Result<()> {
+    let mut out = io::stdout().lock();
+    out.write_all(bytes)
+        .and_then(|()| out.flush())
+        .context("Failed to write to stdout")
+}
+
 fn run() -> Result<()> {
     let matches = cli().get_matches();
 
-    let input = get_input(&matches)?;
+    match matches.subcommand() {
+        Some(("draw", args)) => draw(args),
+        Some(("completions", args)) => {
+            let shell = args
+                .get_one::<String>("shell")
+                .expect("Clap requires a shell for completions");
+            write_stdout(&completion_script(shell))
+        }
+        Some(("man", _)) => {
+            let mut page = Vec::new();
+            clap_mangen::Man::new(cli())
+                .render(&mut page)
+                .context("Failed to render the man page")?;
+            write_stdout(&page)
+        }
+        Some((other, _)) => unreachable!("Clap accepted unknown subcommand {other:?}"),
+        // draw is the default, and its options are defined on the top-level command too
+        None => draw(&matches),
+    }
+}
+
+fn draw(matches: &ArgMatches) -> Result<()> {
+    let input = get_input(matches)?;
 
     let color = should_color(
         matches

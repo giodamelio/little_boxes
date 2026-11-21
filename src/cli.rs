@@ -1,33 +1,49 @@
 use std::path::PathBuf;
 
-use clap::{Command, arg, command, value_parser};
+use clap::{Arg, Command, arg, command, value_parser};
+
+// The options of `draw`. They are also defined on the top-level command, which is how `draw`
+// becomes the default: with no subcommand, clap parses them there instead.
+fn draw_args() -> [Arg; 6] {
+    [
+        arg!(-t --title <TITLE> "Add a title to the box")
+            .required(false)
+            .value_parser(parse_title),
+        arg!(-c --charset <CHARSET> "The charset to draw the box with")
+            .value_parser(["thick", "thin", "double", "box", "rounded", "dot", "ascii"])
+            .default_value("thick"),
+        arg!(-f --file <FILE> "Read input from a file instead of stdin")
+            .value_parser(value_parser!(PathBuf)),
+        arg!(--all "Compare all charsets"),
+        arg!(--"border-color" <SPEC> "Color the border: a name like red or bright-blue, a 256-color index 0-255, or #rrggbb")
+            .value_parser(parse_border_color),
+        arg!(--color <WHEN> "When to color the border")
+            .value_parser(["auto", "always", "never"])
+            .default_value("auto"),
+    ]
+}
 
 pub fn cli() -> Command {
     command!()
-        .arg(
-            arg!(-t --title <TITLE> "Add a title to the box")
-                .required(false)
-                .value_parser(parse_title),
+        // So the top-level copies of draw's options cannot be mixed with another subcommand
+        .args_conflicts_with_subcommands(true)
+        .args(draw_args())
+        .subcommand(
+            Command::new("draw")
+                .about("Draw a box around the input (the default)")
+                .args(draw_args()),
         )
-        .arg(
-            arg!(-c --charset <CHARSET> "The charset to draw the box with")
-                .value_parser(["thick", "thin", "double", "box", "rounded", "dot", "ascii"])
-                .default_value("thick"),
+        .subcommand(
+            Command::new("completions")
+                .about("Print a shell completion script")
+                .arg(
+                    Arg::new("shell")
+                        .value_name("SHELL")
+                        .required(true)
+                        .value_parser(["bash", "elvish", "fish", "nushell", "powershell", "zsh"]),
+                ),
         )
-        .arg(
-            arg!(-f --file <FILE> "Read input from a file instead of stdin")
-                .value_parser(value_parser!(PathBuf)),
-        )
-        .arg(arg!(--all "Compare all charsets"))
-        .arg(
-            arg!(--"border-color" <SPEC> "Color the border: a name like red or bright-blue, a 256-color index 0-255, or #rrggbb")
-                .value_parser(parse_border_color),
-        )
-        .arg(
-            arg!(--color <WHEN> "When to color the border")
-                .value_parser(["auto", "always", "never"])
-                .default_value("auto"),
-        )
+        .subcommand(Command::new("man").about("Print the man page"))
 }
 
 // The title is drawn inside the top border, so a line break would split the border in two
@@ -100,6 +116,12 @@ mod tests {
         assert!(parse_title("a\rb").is_err());
         assert!(parse_title("a\r\nb").is_err());
         assert!(parse_title("title\n").is_err());
+    }
+
+    // clap only checks the definition's consistency in debug builds, so assert it once here
+    #[test]
+    fn test_cli_definition_is_valid() {
+        cli().debug_assert();
     }
 
     #[test]

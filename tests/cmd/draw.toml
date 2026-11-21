@@ -1,0 +1,8 @@
+# draw is the default subcommand, so this is also what `little_boxes --title Hi --charset ascii` draws
+args = ["draw", "--title", "Hi", "--charset", "ascii"]
+stdin = "Hello World"
+stdout = """
++-- Hi -------+
+| Hello World |
++-------------+
+"""

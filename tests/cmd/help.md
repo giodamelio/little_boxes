@@ -3,6 +3,13 @@ $ little_boxes --help
 Adds boxes around stdin. Optionally adds a title
 
 Usage: little_boxes [OPTIONS]
+       little_boxes <COMMAND>
+
+Commands:
+  draw         Draw a box around the input (the default)
+  completions  Print a shell completion script
+  man          Print the man page
+  help         Print this message or the help of the given subcommand(s)
 
 Options:
   -t, --title <TITLE>        Add a title to the box
