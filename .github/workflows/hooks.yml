@@ -29,8 +29,8 @@ jobs:
         with:
           primary-key: hooks-nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
           restore-prefixes-first-match: hooks-nix-${{ runner.os }}-
-          # The dev shell closure is about 2.5 GiB
-          gc-max-store-size-linux: 3G
+          # The runner's store holds about 3.3 GiB once the dev shell and its flake inputs are in it
+          gc-max-store-size-linux: 4G
           purge: true
           purge-prefixes: hooks-nix-${{ runner.os }}-
           purge-created: 0
