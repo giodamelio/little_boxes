@@ -48,15 +48,15 @@
 
             nativeBuildInputs = [pkgs.installShellFiles];
 
-            postInstall = ''
-              # build.rs writes the man page and completions into its OUT_DIR, whose path differs
-              # between cargo versions and profiles, so locate the directory by the man page in it.
-              outDir=$(dirname "$(find target/ -name little_boxes.1 -path '*/build/little_boxes*' | head -n1)")
-              installManPage "$outDir/little_boxes.1"
-              installShellCompletion --bash "$outDir/little_boxes.bash"
-              installShellCompletion --zsh "$outDir/_little_boxes"
-              installShellCompletion --fish "$outDir/little_boxes.fish"
-              installShellCompletion --nushell "$outDir/little_boxes.nu"
+            # The binary prints its own man page and completions, which a cross build cannot run
+            postInstall = lib.optionalString (pkgs.stdenv.buildPlatform.canExecute pkgs.stdenv.hostPlatform) ''
+              $out/bin/little_boxes man > little_boxes.1
+              installManPage little_boxes.1
+              installShellCompletion --cmd little_boxes \
+                --bash <($out/bin/little_boxes completions bash) \
+                --zsh <($out/bin/little_boxes completions zsh) \
+                --fish <($out/bin/little_boxes completions fish) \
+                --nushell <($out/bin/little_boxes completions nushell)
             '';
 
             meta = {

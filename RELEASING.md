@@ -94,7 +94,7 @@ Every check runs against `@-`, the release commit.
 - [ ] **3.4** Build the Nix package and check its version: `nix build && ./result/bin/little_boxes --version`.
   - Expect: `little_boxes <NEXT>`.
 - [ ] **3.5** Check the man page and completions: `man ./result/share/man/man1/little_boxes.1.gz`, then `ls ./result/share/{bash-completion,zsh,fish}`.
-  - Expect: every flag from `little_boxes --help` appears in the man page, and the completion files exist. `build.rs` generates them on every build, so there is nothing to commit.
+  - Expect: every flag from `little_boxes --help` appears in the man page, and the completion files exist. The package generates them with `little_boxes man` and `little_boxes completions <SHELL>`, so there is nothing to commit.
 - [ ] **3.6** Do a dry run of the crates.io publish: `cargo publish --dry-run --registry crates-io`.
   - Expect: `Uploading little_boxes v<NEXT>`, then `warning: aborting upload due to dry run`.
   - `--registry crates-io` is required. Without it, cargo refuses because `.cargo/config.toml` replaces crates.io with the vendored sources.
