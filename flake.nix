@@ -25,6 +25,7 @@
 
       perSystem = {
         config,
+        inputs',
         lib,
         pkgs,
         ...
@@ -35,38 +36,51 @@
         # Every hook also runs in the pre-commit stage, so that `prek run -a`, which is what
         # `jj push` runs, checks everything a push would.
         bothStages = lib.mkForce ["pre-commit" "pre-push"];
+
+        mkPackage = rustPlatform:
+          rustPlatform.buildRustPackage {
+            pname = manifest.name;
+            inherit (manifest) version;
+            src = lib.cleanSource ./.;
+            # The nixpkgs package builds from vendor/ too, so building from it here keeps CI
+            # testing the crates that package will use.
+            cargoVendorDir = "vendor";
+
+            nativeBuildInputs = [pkgs.installShellFiles];
+
+            postInstall = ''
+              # build.rs writes the man page and completions into its OUT_DIR, whose path differs
+              # between cargo versions and profiles, so locate the directory by the man page in it.
+              outDir=$(dirname "$(find target/ -name little_boxes.1 -path '*/build/little_boxes*' | head -n1)")
+              installManPage "$outDir/little_boxes.1"
+              installShellCompletion --bash "$outDir/little_boxes.bash"
+              installShellCompletion --zsh "$outDir/_little_boxes"
+              installShellCompletion --fish "$outDir/little_boxes.fish"
+              installShellCompletion --nushell "$outDir/little_boxes.nu"
+            '';
+
+            meta = {
+              inherit (manifest) description;
+              homepage = manifest.repository;
+              license = lib.licenses.mit;
+              maintainers = [lib.maintainers.giodamelio];
+              mainProgram = "little_boxes";
+            };
+          };
       in {
         rust-toolchains.channel = "stable";
 
-        packages.default = config.rust-toolchains.rustPlatform.buildRustPackage {
-          pname = manifest.name;
-          inherit (manifest) version;
-          src = lib.cleanSource ./.;
-          # The nixpkgs package builds from vendor/ too, so building from it here keeps CI
-          # testing the crates that package will use.
-          cargoVendorDir = "vendor";
+        packages.default = mkPackage config.rust-toolchains.rustPlatform;
 
-          nativeBuildInputs = [pkgs.installShellFiles];
-
-          postInstall = ''
-            # build.rs writes the man page and completions into its OUT_DIR, whose path differs
-            # between cargo versions and profiles, so locate the directory by the man page in it.
-            outDir=$(dirname "$(find target/ -name little_boxes.1 -path '*/build/little_boxes*' | head -n1)")
-            installManPage "$outDir/little_boxes.1"
-            installShellCompletion --bash "$outDir/little_boxes.bash"
-            installShellCompletion --zsh "$outDir/_little_boxes"
-            installShellCompletion --fish "$outDir/little_boxes.fish"
-            installShellCompletion --nushell "$outDir/little_boxes.nu"
-          '';
-
-          meta = {
-            inherit (manifest) description;
-            homepage = manifest.repository;
-            license = lib.licenses.mit;
-            maintainers = [lib.maintainers.giodamelio];
-            mainProgram = "little_boxes";
-          };
-        };
+        # Built and tested on rust-toolchains' pinned nightly, so CI sees upcoming breakage early.
+        # It is a package rather than a check, so `nix flake check` stays on the pinned stable.
+        packages.nightly = let
+          nightly = inputs'.rust-toolchains.packages.nightly;
+        in
+          mkPackage (pkgs.makeRustPlatform {
+            cargo = nightly;
+            rustc = nightly;
+          });
 
         # The checks module copies its package's cargoDeps, which a vendored build leaves null, so
         # it gets one assembled from vendor/ and the lockfile cargoSetupHook checks it against.
