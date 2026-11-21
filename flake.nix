@@ -102,6 +102,8 @@
 
                 cargo-edit
                 prek
+                git-cliff
+                committed
 
                 # Temporarily disable vendored sources to run `cargo upgrade`, then re-vendor.
                 (pkgs.writeShellApplication {
