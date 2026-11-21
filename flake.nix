@@ -33,10 +33,6 @@
         manifest = (lib.importTOML ./Cargo.toml).package;
         inherit (config.rust-toolchains) toolchain;
 
-        # Every hook also runs in the pre-commit stage, so that `prek run -a`, which is what
-        # `jj push` runs, checks everything a push would.
-        bothStages = lib.mkForce ["pre-commit" "pre-push"];
-
         mkPackage = rustPlatform:
           rustPlatform.buildRustPackage {
             pname = manifest.name;
@@ -82,16 +78,6 @@
             rustc = nightly;
           });
 
-        # The checks module copies its package's cargoDeps, which a vendored build leaves null, so
-        # it gets one assembled from vendor/ and the lockfile cargoSetupHook checks it against.
-        rust-toolchains.checks.package = config.packages.default.overrideAttrs {
-          cargoDeps = pkgs.runCommand "${manifest.name}-vendor" {} ''
-            cp -r ${./vendor} $out
-            chmod u+w $out
-            cp ${./Cargo.lock} $out/Cargo.lock
-          '';
-        };
-
         rust-toolchains.cargoDeny.settings.advisories = {
           ignore = [
             {
@@ -104,14 +90,11 @@
           yanked = "allow";
         };
 
-        rust-toolchains.prek.hooks = {
-          rustfmt.stages = bothStages;
-          clippy.stages = bothStages;
-          test.stages = bothStages;
-          unused-deps.stages = bothStages;
-          unused-dev-deps.stages = bothStages;
-          cargo-deny.stages = bothStages;
+        # `jj push` runs `prek run -a`, the pre-commit stage, so that stage has to check everything
+        # a push would
+        rust-toolchains.prek.allHooksInPreCommit = true;
 
+        rust-toolchains.prek.hooks = {
           actionlint = {
             name = "actionlint";
             entry = lib.getExe pkgs.actionlint;

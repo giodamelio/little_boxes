@@ -90,11 +90,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1795221762,
-        "narHash": "sha256-c9XgSLjby1gydT4+bIRHOw86DbLyKE6xMjpfwCpu3wE=",
+        "lastModified": 1795228099,
+        "narHash": "sha256-Umn+HIPhm4oyvpP5GYx4JBDaysXF2Qi+g59qAraqZqM=",
         "owner": "giodamelio",
         "repo": "rust-toolchains",
-        "rev": "f7f1ce56ea5eee91bc8b283b797bd4066abfd8be",
+        "rev": "5dfae1506da1c04244d15c135a76be8be3472595",
         "type": "github"
       },
       "original": {
