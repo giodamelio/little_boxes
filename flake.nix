@@ -84,6 +84,22 @@
                 types = ["yaml"];
                 pass_filenames = false;
               };
+              committed = {
+                enable = true;
+                name = "committed";
+                # git push passes the pushed commits as PRE_COMMIT_FROM_REF..TO_REF. `prek run`
+                # passes neither, so it checks the same range as the Commits workflow: everything
+                # after the 1.12.1 release, which predates the style.
+                entry = toString (pkgs.writeShellScript "committed-range" ''
+                  from=''${PRE_COMMIT_FROM_REF:-924086627518ef0c96a38fb901b83d32d5db43d2}
+                  to=''${PRE_COMMIT_TO_REF:-HEAD}
+                  exec ${pkgs.committed}/bin/committed "$from..$to"
+                '');
+                # pre-commit too, so that `prek run -a` includes it alongside the other hooks
+                stages = ["pre-commit" "pre-push"];
+                pass_filenames = false;
+                always_run = true;
+              };
             };
           };
         in

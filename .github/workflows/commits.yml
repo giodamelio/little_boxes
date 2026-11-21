@@ -1,0 +1,16 @@
+name: Commits
+on: [push, pull_request]
+jobs:
+  lint:
+    name: Lint commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4.3.1
+        with:
+          fetch-depth: 0
+          # The default pull request ref is a merge commit, which is not one of the PR's commits
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: crate-ci/committed@02af07ed1d11ad69a96ab75f08c9831a4e2c00da #v1.1.12
+        with:
+          # History up to the 1.12.1 release predates conventional commits
+          commits: 924086627518ef0c96a38fb901b83d32d5db43d2..HEAD

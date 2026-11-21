@@ -32,6 +32,9 @@ jobs:
     name: Run ${{ matrix.hook }} hook
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 #v4.3.1
+        with:
+          # The committed hook lints a range of past commits, so it needs the full history
+          fetch-depth: 0
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@92148bb48b9a0c5458c53dd0b368fbfbfbaa3210 #main
       - name: Setup Magic Nix Cache

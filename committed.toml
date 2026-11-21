@@ -1,0 +1,9 @@
+# Commit message lint rules: https://github.com/crate-ci/committed/blob/master/docs/reference.md
+# Titles become CHANGELOG.md entries, so AGENTS.md explains how to write them.
+style = "conventional"
+allowed_types = ["feat", "fix", "perf", "revert", "refactor", "test", "docs", "ci", "build", "chore", "style"]
+subject_length = 72
+# git-cliff capitalises the first letter when it writes the changelog
+subject_capitalized = false
+line_length = 72
+merge_commit = false
