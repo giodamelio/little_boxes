@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::thread;
@@ -16,7 +17,7 @@ impl Rng {
     }
 
     fn below(&mut self, n: usize) -> usize {
-        (self.next() % n as u64) as usize
+        usize::try_from(self.next() % n as u64).expect("a remainder of n fits in a usize")
     }
 
     fn chance(&mut self, percent: usize) -> bool {
@@ -37,8 +38,10 @@ impl Rng {
     }
 
     fn letters(&mut self) -> String {
-        (0..1 + self.below(5))
-            .map(|_| (b'a' + self.below(26) as u8) as char)
+        (0..=self.below(5))
+            .map(|_| {
+                char::from(b'a' + u8::try_from(self.below(26)).expect("below 26 fits in a u8"))
+            })
             .collect()
     }
 }
@@ -51,6 +54,10 @@ enum Color {
     Rgb(u16, u16, u16),
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "one field per terminal attribute, so the model reads like the SGR codes it tracks"
+)]
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Style {
     bold: bool,
@@ -87,14 +94,13 @@ impl Style {
                 [2] => self.dim = true,
                 [3] => self.italic = true,
                 [4] => self.underline = Some(1),
-                [4, 0] => self.underline = None,
+                [4, 0] | [24] => self.underline = None,
                 [4, style] => self.underline = Some(*style),
                 [22] => {
                     self.bold = false;
                     self.dim = false;
                 }
                 [23] => self.italic = false,
-                [24] => self.underline = None,
                 // Blink rates kept apart and 73-75 modelled as mintty does, so a terminal that
                 // reads codes more finely than the box does still sees the right style
                 [5] => self.slow_blink = true,
@@ -119,7 +125,7 @@ impl Style {
                 [49] => self.bg = None,
                 [59] => self.underline_color = None,
                 [code @ (38 | 48 | 58), 2, _, r, g, b] => {
-                    *self.color_slot(*code) = Some(Color::Rgb(*r, *g, *b))
+                    *self.color_slot(*code) = Some(Color::Rgb(*r, *g, *b));
                 }
                 [code @ (38 | 48 | 58)] => {
                     let color = match groups[i + 1].as_slice() {
@@ -278,7 +284,7 @@ fn vocabulary() -> Vec<String> {
         "3;39;49",
     ]
     .iter()
-    .map(|params| params.to_string())
+    .map(std::string::ToString::to_string)
     .collect();
     sgr.extend((30..=37).chain(40..=47).map(|code| code.to_string()));
     sgr.extend((0..256).step_by(17).map(|n| format!("38;5;{n}")));
@@ -393,7 +399,7 @@ fn torture_leading_reset_sequences_replace_the_replay() {
             1 => format!(";1;{}", 40 + rng.below(8)),
             _ => format!("0;38;5;{}", rng.below(256)),
         };
-        input.push_str(&format!("\u{1b}[{params}m{}\n", rng.letters()));
+        writeln!(input, "\u{1b}[{params}m{}", rng.letters()).expect("writing to a String");
     }
     let output_len = assert_box_preserves_styles(&input);
     assert_size_bounded(&input, output_len, "\u{1b}[0;38;5;255m".len());
@@ -407,8 +413,8 @@ fn generate_restyling(
 ) -> String {
     let mut input = String::new();
     for _ in 0..lines {
-        for _ in 0..1 + rng.below(6) {
-            input.push_str(&format!("\u{1b}[{}m", style(rng)));
+        for _ in 0..=rng.below(6) {
+            write!(input, "\u{1b}[{}m", style(rng)).expect("writing to a String");
             input.push_str(&rng.letters());
         }
         input.push('\n');

@@ -57,7 +57,7 @@ pub fn parse_border_color(spec: &str) -> Result<String, String> {
     if spec.bytes().all(|b| b.is_ascii_digit())
         && let Ok(index) = spec.parse::<u8>()
     {
-        return Ok(format!("\u{1b}[38;5;{}m", index));
+        return Ok(format!("\u{1b}[38;5;{index}m"));
     }
 
     if let Some(hex) = spec.strip_prefix('#')
@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn test_parse_title_accepts_single_line() {
         assert_eq!(parse_title("hello"), Ok("hello".to_string()));
-        assert_eq!(parse_title(""), Ok("".to_string()));
+        assert_eq!(parse_title(""), Ok(String::new()));
         assert_eq!(
             parse_title("\u{1b}[31mred\u{1b}[0m\tafter tab"),
             Ok("\u{1b}[31mred\u{1b}[0m\tafter tab".to_string())

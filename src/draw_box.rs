@@ -151,15 +151,15 @@ impl Slots {
                 [1] => Slots::BOLD,
                 [2] => Slots::DIM,
                 [22] => Slots::BOLD.union(Slots::DIM),
-                [3] | [23] => Slots::ITALIC,
-                [4] | [24] | [4, 0..=5] => Slots::UNDERLINE,
+                [3 | 23] => Slots::ITALIC,
+                [4 | 24] | [4, 0..=5] => Slots::UNDERLINE,
                 [5] => Slots::SLOW_BLINK,
                 [6] => Slots::RAPID_BLINK,
                 [25] => Slots::SLOW_BLINK.union(Slots::RAPID_BLINK),
-                [7] | [27] => Slots::INVERSE,
-                [8] | [28] => Slots::HIDDEN,
-                [9] | [29] => Slots::STRIKE,
-                [53] | [55] => Slots::OVERLINE,
+                [7 | 27] => Slots::INVERSE,
+                [8 | 28] => Slots::HIDDEN,
+                [9 | 29] => Slots::STRIKE,
+                [53 | 55] => Slots::OVERLINE,
                 [30..=37 | 39 | 90..=97] => Slots::FG,
                 [40..=47 | 49 | 100..=107] => Slots::BG,
                 [59] => Slots::UNDERLINE_COLOR,
@@ -169,8 +169,8 @@ impl Slots {
                 // The semicolon form spreads its arguments over the following params
                 [code] => {
                     rest = match rest {
-                        [[5], [0..=255], tail @ ..] => tail,
-                        [[2], [0..=255], [0..=255], [0..=255], tail @ ..] => tail,
+                        [[5], [0..=255], tail @ ..]
+                        | [[2], [0..=255], [0..=255], [0..=255], tail @ ..] => tail,
                         _ => return None,
                     };
                     Slots::of_color(*code)?
@@ -350,10 +350,10 @@ impl<'s> OpenStyle<'s> {
 
     fn reopen(&self, out: &mut impl Write) -> io::Result<()> {
         for (sgr, _) in &self.sgr {
-            write!(out, "{}", sgr)?;
+            write!(out, "{sgr}")?;
         }
         if let Some(hyperlink) = self.hyperlink {
-            write!(out, "{}", hyperlink)?;
+            write!(out, "{hyperlink}")?;
         }
         Ok(())
     }
@@ -366,7 +366,7 @@ impl<'s> OpenStyle<'s> {
             None => {}
         }
         if !self.sgr.is_empty() {
-            write!(out, "{}", SGR_RESET)?;
+            write!(out, "{SGR_RESET}")?;
         }
         Ok(())
     }
@@ -382,7 +382,7 @@ fn calculate_max_length(content: &[String]) -> usize {
 
 fn repeat(out: &mut impl Write, c: char, count: usize) -> io::Result<()> {
     for _ in 0..count {
-        write!(out, "{}", c)?;
+        write!(out, "{c}")?;
     }
     Ok(())
 }
@@ -436,7 +436,7 @@ impl<'a> DrawBox<'a> {
 
     fn begin_border(&self, out: &mut impl Write) -> io::Result<()> {
         match self.border_sgr {
-            Some(sgr) => write!(out, "{}", sgr),
+            Some(sgr) => write!(out, "{sgr}"),
             None => Ok(()),
         }
     }
@@ -459,7 +459,7 @@ impl<'a> DrawBox<'a> {
                     self.charset.horizontal_top, self.charset.t_left
                 )?;
                 self.end_border(out)?;
-                write!(out, "{}", title)?;
+                write!(out, "{title}")?;
                 let mut style = OpenStyle::default();
                 style.update(title);
                 style.close(out)?;
@@ -481,12 +481,12 @@ impl<'a> DrawBox<'a> {
 
     fn render_middle(&self, out: &mut impl Write) -> io::Result<()> {
         let mut style = OpenStyle::default();
-        for line in self.content.iter() {
+        for line in &self.content {
             self.begin_border(out)?;
             write!(out, "{} ", self.charset.vertical)?;
             self.end_border(out)?;
             style.reopen(out)?;
-            write!(out, "{}", line)?;
+            write!(out, "{line}")?;
             style.update(line);
             style.close(out)?;
             repeat(out, ' ', self.inner_width - count_visible_chars(line))?;
@@ -514,7 +514,10 @@ mod tests {
     use crate::charset::get_charset;
 
     fn render(content: &[&str], title: Option<&str>) -> String {
-        let content = content.iter().map(|line| line.to_string()).collect();
+        let content = content
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         let mut out = Vec::new();
         DrawBox::new(content, title, get_charset("ascii"))
             .render(&mut out)
@@ -671,7 +674,10 @@ mod tests {
     }
 
     fn render_red(content: &[&str], title: Option<&str>) -> String {
-        let content = content.iter().map(|line| line.to_string()).collect();
+        let content = content
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         let mut out = Vec::new();
         DrawBox::new(content, title, get_charset("ascii"))
             .border_sgr(Some("\u{1b}[31m"))

@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -16,7 +17,10 @@ fn run_with_closed_stdout(args: &[&str]) {
         .expect("failed to start little_boxes");
 
     let mut stdin = child.stdin.take().unwrap();
-    let input: String = (1..=LINES).map(|n| format!("{n}\n")).collect();
+    let input = (1..=LINES).fold(String::new(), |mut input, n| {
+        writeln!(input, "{n}").expect("writing to a String");
+        input
+    });
     // Written from a thread so a large input can't deadlock against a full stdin pipe
     let writer = thread::spawn(move || stdin.write_all(input.as_bytes()));
 

@@ -21,7 +21,7 @@ fn main() -> Result<()> {
 
     // Generate manpages
     let man = clap_mangen::Man::new(cmd.clone());
-    let mut buffer: Vec<u8> = Default::default();
+    let mut buffer: Vec<u8> = Vec::new();
     man.render(&mut buffer)?;
     write(out_dir.join("little_boxes.1"), buffer)?;
 

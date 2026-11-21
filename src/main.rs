@@ -15,27 +15,31 @@ use self::draw_box::DrawBox;
 mod charset;
 use self::charset::{Charset, get_charset};
 
+#[expect(
+    clippy::unnecessary_debug_formatting,
+    reason = "Debug quotes the path in error messages, which tests/cmd snapshots"
+)]
 fn get_input(matches: &ArgMatches) -> Result<Vec<String>> {
     if let Some(file_path) = matches.get_one::<PathBuf>("file") {
         let file = File::open(file_path).map_err(|e| match e.kind() {
             io::ErrorKind::NotFound => {
-                anyhow!("File {:?} does not exist", file_path)
+                anyhow!("File {file_path:?} does not exist")
             }
-            _ => anyhow::Error::new(e).context(format!("Failed to open {:?}", file_path)),
+            _ => anyhow::Error::new(e).context(format!("Failed to open {file_path:?}")),
         })?;
 
         let metadata = file
             .metadata()
-            .with_context(|| format!("Failed to stat {:?}", file_path))?;
+            .with_context(|| format!("Failed to stat {file_path:?}"))?;
 
         if metadata.is_dir() {
-            anyhow::bail!("{:?} is a directory, it must be a file", file_path);
+            anyhow::bail!("{file_path:?} is a directory, it must be a file");
         }
 
         BufReader::new(file)
             .lines()
             .collect::<io::Result<Vec<_>>>()
-            .with_context(|| format!("Failed to read {:?}", file_path))
+            .with_context(|| format!("Failed to read {file_path:?}"))
     } else {
         io::stdin()
             .lock()
@@ -83,7 +87,7 @@ fn run() -> Result<()> {
 
         for charset_name in charsets {
             let charset = get_charset(charset_name);
-            writeln!(out, "{}:", charset_name).context("Failed to write to stdout")?;
+            writeln!(out, "{charset_name}:").context("Failed to write to stdout")?;
             print_box(
                 &mut out,
                 input.clone(),
@@ -133,21 +137,25 @@ fn is_broken_pipe(err: &anyhow::Error) -> bool {
 
 fn main() {
     match run() {
-        Ok(_) => (),
+        Ok(()) => (),
         // Rust ignores SIGPIPE, so a reader like `head` closing early surfaces as EPIPE. Exit 0
         // like ripgrep so `set -o pipefail` scripts piping into `head` keep working.
         Err(err) if is_broken_pipe(&err) => (),
         Err(err) => {
-            eprintln!("Error: {}", err);
+            eprintln!("Error: {err}");
             std::process::exit(1);
         }
-    };
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "builds the Option arguments should_color takes"
+    )]
     fn os(value: &str) -> Option<&OsStr> {
         Some(OsStr::new(value))
     }
