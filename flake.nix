@@ -62,22 +62,33 @@
           hooks = git-hooks.lib.${system}.run {
             src = ./.;
             package = pkgs.prek;
+            # prek runs hooks with the same priority in parallel, lowest first. rustfmt rewrites
+            # files, so it finishes before anything compiles them.
             hooks = {
-              cargo-check.enable = true;
-              rustfmt.enable = true;
+              cargo-check = {
+                enable = true;
+                priority = 1;
+              };
+              rustfmt = {
+                enable = true;
+                priority = 0;
+              };
               clippy = {
                 enable = true;
                 entry = "cargo clippy -- -D warnings";
                 pass_filenames = false;
+                priority = 1;
               };
               cargo-test = {
                 enable = true;
                 name = "cargo-test";
                 entry = "cargo test";
                 pass_filenames = false;
+                priority = 1;
               };
               actionlint = {
                 enable = true;
+                priority = 0;
                 name = "actionlint";
                 entry = "${pkgs.actionlint}/bin/actionlint";
                 files = "^\\.github/workflows/";
@@ -99,6 +110,7 @@
                 stages = ["pre-commit" "pre-push"];
                 pass_filenames = false;
                 always_run = true;
+                priority = 0;
               };
             };
           };
