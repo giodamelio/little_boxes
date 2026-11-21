@@ -78,6 +78,18 @@
           '';
         };
 
+        rust-toolchains.cargoDeny.settings.advisories = {
+          ignore = [
+            {
+              id = "RUSTSEC-2026-0542";
+              reason = "humantime is unmaintained with no replacement yet, and only trycmd uses it, for the tests";
+            }
+          ];
+          # .cargo/config.toml replaces the crates.io index with vendor/, so cargo-deny cannot
+          # look crates up there and would warn about every one of them
+          yanked = "allow";
+        };
+
         rust-toolchains.prek.hooks = {
           rustfmt.stages = bothStages;
           clippy.stages = bothStages;
