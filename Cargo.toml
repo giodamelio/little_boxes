@@ -5,7 +5,7 @@ documentation = "https://github.com/giodamelio/little_boxes"
 license = "MIT"
 name = "little_boxes"
 repository = "https://github.com/giodamelio/little_boxes"
-version = "1.13.0"
+version = "1.14.0"
 edition = "2024"
 # Everything else is repo tooling. .cargo/config.toml in particular points cargo at vendor/,
 # which is not published, so shipping it would break builds of the published crate.
