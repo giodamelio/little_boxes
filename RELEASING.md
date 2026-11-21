@@ -6,6 +6,18 @@ This is the release runbook. Work through it top to bottom.
 - Every step says what you should see. When you see something else, follow its **If not** line, and do not continue past a failed step.
 - Run every command from the repository root, inside `nix develop`.
 
+## Hand the marked steps to a person
+
+Steps marked **[You]** publish something, move a bookmark or tag, or need your credentials. They cannot be undone from this checkout, so a person always runs them.
+
+When an agent works through this runbook and reaches a **[You]** step, it must:
+
+1. Print the exact command, with every variable filled in, in a code block.
+2. Stop, and wait for you to say you ran it. It runs nothing else in the meantime.
+3. Check the step's **Expect** line against the output you paste, or by reading state afterwards, before it moves on.
+
+An agent runs every unmarked step itself.
+
 ## 0. Check the prerequisites
 
 Do these once per machine. They stay true between releases.
@@ -14,18 +26,18 @@ Do these once per machine. They stay true between releases.
   - Expect: `git-cliff --version`, `committed --version`, `prek --version` and `cargo set-version --help` all run.
   - If not: you are outside the dev shell, or `flake.nix` is broken. Stop.
 - [ ] **0.2** Check that GitHub CLI is logged in: `gh auth status`.
-  - Expect: `Logged in to github.com`, with the `repo` and `workflow` scopes.
-  - If not: run `gh auth login`.
-- [ ] **0.3** Check that you can publish to crates.io: `test -f ~/.cargo/credentials.toml && echo ok`.
+  - Expect: `Logged in to github.com`.
+  - If not: **[You]** run `gh auth login`.
+- [ ] **0.3** Check that you can publish to crates.io: `test -f "${CARGO_HOME:-$HOME/.cargo}/credentials.toml" && echo ok`.
   - Expect: `ok`.
-  - If not: create a token on [the crates.io API tokens page](https://crates.io/settings/tokens) with the `publish-update` scope for `little_boxes`, then run `cargo login`.
+  - If not: **[You]** create a token on [the crates.io API tokens page](https://crates.io/settings/tokens) with the `publish-update` scope for `little_boxes`, then run `cargo login`. Never paste the token to an agent.
 - [ ] **0.4** Check that you have a nixpkgs fork and a local checkout of it: `gh repo view <your-user>/nixpkgs --json name`.
   - Expect: `{"name":"nixpkgs"}`, and a checkout whose `upstream` remote is `https://github.com/NixOS/nixpkgs`.
-  - If not: run `gh repo fork NixOS/nixpkgs --clone=false`, then clone your fork and add the upstream remote.
+  - If not: **[You]** run `gh repo fork NixOS/nixpkgs --clone=false`, then clone your fork and add the upstream remote.
 
 ## 1. Decide what to release
 
-- [ ] **1.1** Fetch the remote: `jj git fetch`.
+- [ ] **1.1** **[You]** Fetch the remote, which needs your SSH key: `jj git fetch`.
 - [ ] **1.2** Check that your `master` matches the remote: `jj log -r 'master | master@origin'`.
   - Expect: one commit, carrying both `master` and `master@origin`.
   - If not: someone pushed to `master`, or you have an unpushed local `master`. Reconcile them before going on. Stop.
@@ -35,7 +47,7 @@ Do these once per machine. They stay true between releases.
   export PREV=v1.12.1
   ```
 
-- [ ] **1.4** List the changes to release: `jj log -r 'master..@'`.
+- [ ] **1.4** List the changes to release: `jj log -r "$PREV..@"`.
   - Expect: every change you mean to release, each described, and nothing else.
   - If not: finish, describe or abandon the stray changes. Then repeat 1.4.
 - [ ] **1.5** Run every hook, including the commit message lint: `prek run -a`.
@@ -64,7 +76,7 @@ Do these once per machine. They stay true between releases.
   - Expect: `Upgrading little_boxes from <old> to <NEXT>`. `jj diff --stat` shows one changed line in each of `Cargo.toml` and `Cargo.lock`, and nothing else.
   - If `Cargo.lock` changed more than one line: a dependency resolved differently. Run `jj restore Cargo.lock` and investigate before going on. Stop.
 - [ ] **2.3** Generate the changelog: `git-cliff --tag "v$NEXT" --output CHANGELOG.md`.
-  - Expect: `jj diff CHANGELOG.md` adds one `## [NEXT] - <today>` section with the same entries as 1.6, and changes nothing else.
+  - Expect: `jj diff CHANGELOG.md` adds one `## [NEXT] - <date>` section with the same entries as 1.6, and changes nothing else. The date is in UTC.
 - [ ] **2.4** Describe the release commit: `jj desc -m "chore(release): $NEXT"`.
 - [ ] **2.5** Start an empty change on top: `jj new`.
   - Expect: the release commit is now `@-`, and the colocated git `HEAD` points at it. Steps 3.5 and 7.1 rely on that.
@@ -89,36 +101,32 @@ Every check runs against `@-`, the release commit.
 
 **If any check in this section fails:** run `jj abandon <release-commit>`, fix the problem in a new commit below where the release commit was, and restart at 1.4. Never fix forward on top of the release commit.
 
-## 4. Run CI on the release commit
+## 4. Push master and wait for CI
 
-`master` only moves once CI has passed on the exact commit it will point at.
+Pushing `master` publishes nothing: the tag in section 5 is what starts the release. Section 3 already ran the same checks locally, so CI mostly adds the beta and nightly toolchains.
 
-- [ ] **4.1** Create a temporary bookmark: `jj bookmark create "release-$NEXT" -r @-`.
-- [ ] **4.2** Push it with your `jj push` alias, which runs `prek run -a` first: `jj push --bookmark "release-$NEXT"`.
-  - Expect: the hooks pass, and jj reports adding the bookmark on the remote.
-  - If the hooks fail: go back to 1.5.
-- [ ] **4.3** Wait for CI on that commit:
+- [ ] **4.1** **[You]** Move `master` to the release commit: `jj bookmark set master -r <release-change>`.
+  - Expect: `jj log -r master` shows `chore(release): <NEXT>`.
+- [ ] **4.2** **[You]** Push `master` with your `jj push` alias, which runs `prek run -a` first: `jj push --bookmark master`.
+  - Expect: the hooks pass, and jj reports moving `master` forward on the remote.
+  - If the hooks fail: nothing was pushed. Move `master` back with `jj bookmark set master --allow-backwards -r master@origin`, then go back to 1.5.
+  - If the push is rejected: `master` moved on the remote since 1.1. Move `master` back the same way, then restart from 1.1.
+- [ ] **4.3** Wait for CI on `master`:
 
   ```sh
-  gh run list --commit "$(jj log -r @- --no-graph -T commit_id)"
+  gh run list --commit "$(jj log -r master --no-graph -T commit_id)"
   gh run watch <run-id> --exit-status
   ```
 
   - Expect: the Rust, Nix and Commits workflows all succeed.
-  - If not: read the failing job with `gh run view <run-id> --log-failed`, then follow the **If any check fails** rule from section 3.
+  - If not: read the failing job with `gh run view <run-id> --log-failed`. Do not tag. The untagged release commit stays on `master` and does no harm, because git-cliff dates releases by their tags. Fix the problem in a new commit on top of `master`, then make a fresh release commit with the same `NEXT` from section 2 onwards.
 
-## 5. Publish master and the tag
+## 5. Tag the release
 
-- [ ] **5.1** Move `master` to the release commit: `jj bookmark set master -r @-`.
-  - Expect: `jj log -r master` shows `chore(release): <NEXT>`.
-- [ ] **5.2** Push `master`: `jj push --bookmark master`.
-  - Expect: jj reports moving `master` forward on the remote.
-  - If the push is rejected: `master` moved on the remote since 1.1. Stop, and restart from 1.1.
-- [ ] **5.3** Tag the release commit: `jj tag set "v$NEXT" -r master`.
-- [ ] **5.4** Check that the tag and `master` are on the same commit: `jj log -r "master & v$NEXT"`.
+- [ ] **5.1** **[You]** Tag the release commit: `jj tag set "v$NEXT" -r master`.
+- [ ] **5.2** Check that the tag and `master` are on the same commit: `jj log -r "master & v$NEXT"`.
   - Expect: exactly one commit. A tag made before the last rewrite of the release commit is left on an old version of it, which is what happened to `v1.12.1`.
-- [ ] **5.5** Push the tag, which starts the release workflow: `jj git push --tag "v$NEXT"`.
-- [ ] **5.6** Delete the temporary bookmark locally and on the remote: `jj bookmark delete "release-$NEXT"`, then `jj git push --deleted`.
+- [ ] **5.3** **[You]** Push the tag, which starts the release workflow: `jj git push --tag "v$NEXT"`.
 
 ## 6. Check the GitHub release
 
@@ -131,7 +139,7 @@ Every check runs against `@-`, the release commit.
 
   - Expect: success.
   - If **Check the release notes list changes** failed: git-cliff found no entries for the tag. The tag is on the wrong commit, or 1.6 was skipped. Stop and investigate. Do not move a published tag without deciding that deliberately.
-  - If a later step failed for a reason outside the code, such as a network or runner error: re-run it with `gh run rerun <run-id>`, or start it again with `gh workflow run release.yml -f tag="v$NEXT"`.
+  - If a later step failed for a reason outside the code, such as a network or runner error: **[You]** re-run it with `gh run rerun <run-id>`, or start it again with `gh workflow run release.yml -f tag="v$NEXT"`.
 - [ ] **6.2** Check that the release notes match the changelog:
 
   ```sh
@@ -160,7 +168,7 @@ Every check runs against `@-`, the release commit.
 
 ## 7. Publish to crates.io
 
-- [ ] **7.1** Publish from the release commit: `cargo publish --registry crates-io`.
+- [ ] **7.1** **[You]** Publish from the release commit: `cargo publish --registry crates-io`.
   - Expect: `Published little_boxes v<NEXT>`.
   - If cargo reports uncommitted changes: `@` is not empty. Run `jj new master` and repeat 7.1.
 - [ ] **7.2** Check that crates.io has it: `cargo search little_boxes --limit 1 --registry crates-io`.
@@ -170,26 +178,28 @@ Every check runs against `@-`, the release commit.
 
 The package is `pkgs/by-name/li/little_boxes/package.nix`. It builds from the GitHub tag with the committed `vendor/` directory, so only `version` and the source `hash` change.
 
+Everything after 8.1 happens in your nixpkgs checkout, not this one, so you run it. An agent can still review the diff and the build output you paste.
+
 - [ ] **8.1** Look for an update pull request from the nixpkgs update bot:
 
   ```sh
   gh pr list --repo NixOS/nixpkgs --state open --search "little_boxes in:title"
   ```
 
-  - If one exists for `<NEXT>`: review it instead of opening your own. Check that it changes only `version` and `hash`, build it as in 8.4, and approve it. Then skip to section 9.
-- [ ] **8.2** In your nixpkgs checkout, branch from the latest upstream `master`:
+  - If one exists for `<NEXT>`: review it instead of opening your own. Check that it changes only `version` and `hash`, and build it as in 8.4. Then **[You]** approve it, and skip to section 9.
+- [ ] **8.2** **[You]** In your nixpkgs checkout, branch from the latest upstream `master`:
 
   ```sh
   git fetch upstream master
   git switch --create "little_boxes-$NEXT" upstream/master
   ```
 
-- [ ] **8.3** Update the package: `nix run nixpkgs#nix-update -- little_boxes --version "$NEXT"`.
+- [ ] **8.3** **[You]** Update the package: `nix run nixpkgs#nix-update -- little_boxes --version "$NEXT"`.
   - Expect: `git diff` changes only the `version` and `hash` lines of `package.nix`.
-- [ ] **8.4** Build it, which also runs `versionCheckHook`: `nix-build -A little_boxes && ./result/bin/little_boxes --version`.
+- [ ] **8.4** **[You]** Build it, which also runs `versionCheckHook`: `nix-build -A little_boxes && ./result/bin/little_boxes --version`.
   - Expect: the build succeeds, and prints `little_boxes <NEXT>`.
-- [ ] **8.5** Commit with the nixpkgs title format: `git commit --all --message "little_boxes: ${PREV#v} -> $NEXT"`.
-- [ ] **8.6** Push to your fork, then open the pull request with the nixpkgs template:
+- [ ] **8.5** **[You]** Commit with the nixpkgs title format: `git commit --all --message "little_boxes: ${PREV#v} -> $NEXT"`.
+- [ ] **8.6** **[You]** Push to your fork, then open the pull request with the nixpkgs template:
 
   ```sh
   git push --set-upstream origin "little_boxes-$NEXT"
@@ -198,8 +208,7 @@ The package is `pkgs/by-name/li/little_boxes/package.nix`. It builds from the Gi
 
   - In the template, tick the checks you ran: built on your platform, and tested the binary. Link the GitHub release for `v<NEXT>`.
 
-## 9. Cleanup
-
+## 9. Clean up
 
 - [ ] **9.1** Return to a clean working copy on the new `master`: `jj new master`.
 
