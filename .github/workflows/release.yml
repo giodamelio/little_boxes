@@ -28,11 +28,25 @@ jobs:
           version: 0.13.0
       - name: Install cargo-zigbuild
         run: cargo install cargo-zigbuild
+      - name: Generate release notes
+        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff #v4.9.1
+        with:
+          args: --current --strip all --output ${{ runner.temp }}/release-notes.md
+      - name: Check the release notes list changes
+        env:
+          NOTES: ${{ runner.temp }}/release-notes.md
+        # Only feat, fix, perf and revert commits produce entries, so no "### " section means a
+        # release with nothing user-visible or a tag on the wrong commit
+        run: |
+          if ! grep -q '^### ' "$NOTES"; then
+            echo "::error::git-cliff found no changelog entries for this tag"
+            exit 1
+          fi
       - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a #v6.4.0
         with:
           distribution: goreleaser
           version: '~> v2'
-          args: release --clean
+          args: release --clean --release-notes ${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ inputs.tag || github.ref_name }}
