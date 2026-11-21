@@ -1,5 +1,9 @@
 name: Commits
-on: [push, pull_request]
+on:
+  push:
+    # Tag pushes point at a commit that already ran this on its branch
+    branches: ["**"]
+  pull_request:
 jobs:
   lint:
     name: Lint commit messages
