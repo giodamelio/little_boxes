@@ -37,6 +37,16 @@ To add a project-specific tool, append it to `rust-toolchains.devShell.packages`
 - Commit `vendor/` in the same commit as the `Cargo.lock` change.
 - Never delete `vendor/` or `.cargo/config.toml`.
 
+### Make jj see every re-vendored file
+
+Files from crates.io all carry the same fixed modification time. When `cargo vendor` replaces a file with a new version of the same size, such as a `lib.rs` whose only change is the version number, jj sees an unchanged size and time and does not snapshot it. The commit then keeps the old file. Everything built from the working tree still passes, including `nix build` and `nix flake check`, but CI checks out the commit, and cargo fails with `the listed checksum of ... has changed`.
+
+After every `cargo vendor` or `cargo-upgrade-vendored`, before you describe the commit:
+
+1. Touch every vendored file, so jj reads them all again: `find vendor -type f -exec touch {} +`.
+2. Check that `jj diff --stat` now lists each file the update changed.
+3. Build the commit itself, not the working tree, the way CI does: `nix flake check "git+file://$PWD?rev=$(jj log -r @- --no-graph -T commit_id)"`. Run it after `jj new`, so `@-` is the vendoring commit.
+
 ## Install the agent skills
 
 `agent-skills.lock.json` lists the Rust agent skills this project uses and pins their source repo to one commit. The skill files live in `.agents/skills/`, and `.claude/skills/<name>` is a relative symlink to each one. Commit the lockfile, the skill files and the symlinks.
