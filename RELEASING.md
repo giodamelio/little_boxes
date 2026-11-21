@@ -88,7 +88,7 @@ Every check runs against `@-`, the release commit.
 - [ ] **3.1** Check formatting: `cargo fmt --check`.
   - Expect: no output.
 - [ ] **3.2** Run clippy: `cargo clippy --all-targets -- -D warnings`.
-  - Expect: no warnings other than the `manpages/completions built at` note from `build.rs`.
+  - Expect: no warnings.
 - [ ] **3.3** Run the tests: `cargo test`.
   - Expect: `test result: ok` for every suite.
 - [ ] **3.4** Build the Nix package and check its version: `nix build && ./result/bin/little_boxes --version`.

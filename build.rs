@@ -16,10 +16,6 @@ fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=src/cli.rs");
 
     let out_dir = PathBuf::from(var_os("OUT_DIR").ok_or(ErrorKind::NotFound)?);
-    println!(
-        "cargo:warning=manpages/completions built at {:?}",
-        out_dir.clone()
-    );
 
     let mut cmd = cli::cli();
 
