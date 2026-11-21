@@ -118,7 +118,7 @@ Pushing `master` publishes nothing: the tag in section 5 is what starts the rele
   gh run watch <run-id> --exit-status
   ```
 
-  - Expect: the Rust, Nix and Commits workflows all succeed.
+  - Expect: the CI and Commits workflows succeed. The CI workflow's nightly canary job may fail without failing the run; that warns about a future toolchain, and does not block the release.
   - If not: read the failing job with `gh run view <run-id> --log-failed`. Do not tag. The untagged release commit stays on `master` and does no harm, because git-cliff dates releases by their tags. Fix the problem in a new commit on top of `master`, then make a fresh release commit with the same `NEXT` from section 2 onwards.
 
 ## 5. Tag the release

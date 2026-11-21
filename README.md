@@ -1,6 +1,5 @@
 # Little Boxes
-[![Rust](https://github.com/giodamelio/little_boxes/actions/workflows/rust.yml/badge.svg)](https://github.com/giodamelio/little_boxes/actions/workflows/rust.yml)
-[![Nix](https://github.com/giodamelio/little_boxes/actions/workflows/nix.yml/badge.svg)](https://github.com/giodamelio/little_boxes/actions/workflows/nix.yml)
+[![CI](https://github.com/giodamelio/little_boxes/actions/workflows/ci.yml/badge.svg)](https://github.com/giodamelio/little_boxes/actions/workflows/ci.yml)
 [![Crates.io Version](https://img.shields.io/crates/v/little_boxes.svg?style=flat-square)](https://crates.io/crates/little_boxes)
 [![License](https://img.shields.io/crates/l/little_boxes.svg?style=flat-square)](https://github.com/giodamelio/little_boxes/blob/master/LICENSE) 
 
